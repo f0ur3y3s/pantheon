@@ -49,4 +49,5 @@ async def test_endpoints_follow_live_status():
 
         gw = (await c.get("/api/client-config", headers=ADMIN)).json()
         assert gw["direct"] is False and gw["base_url"] == f"{st.gateway_url}/v1"
-        assert gw["models"] == ["qwen36"] and gw["api_key_env"] is None
+        assert gw["models"] == ["mbp/qwen36"] and gw["api_key_env"] is None
+        assert "mbp/qwen36" in gw["opencode"]["config"]["provider"]["pantheon"]["models"]

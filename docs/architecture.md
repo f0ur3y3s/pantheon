@@ -63,7 +63,7 @@ Operation rules:
 - **Status:** each agent is polled on its own loop, so one slow agent can't delay the others. Two consecutive failures, or any auth failure, mark the machine `offline`.
 - **`/api/*`** passes requests through to agents (with an admin token), adds `last_seen`, `last_error`, and `active_requests`, and passes agent error codes and statuses back unchanged.
 - `POST /api/machines/{name}/configs` creates a launch profile on that machine and returns the new configuration.
-- **`/v1/models`** lists `machine/model` for every ready route, plus the bare model id when only one machine serves it.
+- **`/v1/models`** lists each served model once, as `machine/model`. Requests may still use the bare model id when exactly one machine serves it. Host-independent names are Phase 4 aliases.
 - **`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`** accept `model` as `machine/model` or a unique bare id. An ambiguous id returns 409 with a list of options. A model that isn't served returns 503 `not_ready` with the available models.
 - **Streaming:** SSE is relayed chunk by chunk. If the client disconnects, the engine connection is closed, which tells the engine to stop generating. `active_requests` is decremented in every case; Phase 4 draining depends on it.
 - **Client keys** are optional (`client_keys`). If none are configured, the API is open on the LAN.

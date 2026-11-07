@@ -105,8 +105,13 @@ async def test_dashboard_flow_offline_start_progress_and_routing():
         assert op["status"] == "succeeded"
         await asyncio.sleep(0.3)
 
-        ids = {m["id"] for m in (await c.get("/v1/models")).json()["data"]}
-        assert {"zeus/qwen3.8-flash-next-iq3_xxs", "qwen3.8-flash-next-iq3_xxs", "mbp/qwen36", "qwen36"} <= ids
+        ids = [m["id"] for m in (await c.get("/v1/models")).json()["data"]]
+        # each model listed once, always with the machine that serves it
+        assert sorted(ids) == ["mbp/qwen36", "zeus/qwen3.8-flash-next-iq3_xxs"]
+
+        # a bare id is not listed but still routes when exactly one machine serves it
+        r = await c.post("/v1/chat/completions", json={"model": "qwen36", "max_tokens": 3, "messages": []})
+        assert r.status_code == 200 and r.headers["x-pantheon-machine"] == "mbp"
 
         r = await c.post("/v1/chat/completions", json={"model": "zeus/qwen3.8-flash-next-iq3_xxs", "max_tokens": 3, "messages": []})
         assert r.status_code == 200 and r.headers["x-pantheon-machine"] == "zeus"

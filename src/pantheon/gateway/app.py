@@ -165,13 +165,9 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
                 except AgentCallError:
                     pass
         routes = registry.ready_routes()
-        counts: dict[str, int] = {}
-        for _, n, _ in routes:
-            counts[n] = counts.get(n, 0) + 1
         models = []
         for m, n, _ in routes:
-            mid = n if counts[n] == 1 else f"{m}/{n}"
-            models.append(ClientModel(id=mid, name=f"{n} ({m})", context=contexts.get(m)))
+            models.append(ClientModel(id=f"{m}/{n}", name=f"{n} ({m})", context=contexts.get(m)))
         out = client_configs("pantheon", "Pantheon gateway", f"{base}/v1", models,
                              api_key_env="PANTHEON_API_KEY" if cfg.client_keys else None)
         out["direct"] = False
@@ -201,15 +197,9 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
 
     @v1.get("/models")
     async def list_models():
-        routes = registry.ready_routes()
-        counts: dict[str, int] = {}
-        for _, n, _ in routes:
-            counts[n] = counts.get(n, 0) + 1
-        data = []
-        for m, n, _ in routes:
-            data.append({"id": f"{m}/{n}", "object": "model", "owned_by": m})
-            if counts[n] == 1:
-                data.append({"id": n, "object": "model", "owned_by": m})
+        # One entry per served model, always as machine/model, so model pickers (Open WebUI, ...) show each
+        # model once and say where it runs. Requests may still use a bare id when one machine serves it.
+        data = [{"id": f"{m}/{n}", "object": "model", "owned_by": m} for m, n, _ in registry.ready_routes()]
         return {"object": "list", "data": data}
 
     async def forward(request: Request, path: str):
