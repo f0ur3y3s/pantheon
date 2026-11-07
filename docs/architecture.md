@@ -44,6 +44,8 @@ All endpoints except `/v1/health` require `Authorization: Bearer <agent token>`.
 | GET | `/v1/status` | `MachineStatus` |
 | GET | `/v1/capabilities` | `Capabilities`, including detected engine version and feature flags |
 | GET | `/v1/configs` | `ModelConfig[]` the machine can launch |
+| POST | `/v1/configs` | `{label, source_config_id}` → **201** `ModelConfig` for a saved launch profile |
+| GET/PUT | `/v1/configs/{id}/params` | inspect or edit a configuration's launch parameters; ids may contain `/` |
 | POST | `/v1/operations` | `{kind: start\|stop\|switch, config_id}` → **202** `Operation`, returned immediately |
 | GET | `/v1/operations[/{id}]` | progress (`status`, `progress` 0–1, `step`, `error`) |
 | GET | `/v1/logs?lines=N` | merged agent and engine log lines |
@@ -54,11 +56,13 @@ Operation rules:
 - Loading never holds a web request open. Clients poll the operation instead.
 - After a failure the agent re-checks the engine. If the engine is still serving (for example, after a failed stop), the state stays `ready` and the message describes the failure.
 - The agent reconciles with the engine at startup and every 10 seconds. An engine started outside pantheon is adopted as `ready` with a note, and is taken over on the next stop or switch.
+- Launch profiles copy a source configuration's current Pantheon parameter overrides and remain independent of the source. The agent stores profile metadata in `profiles.json` and their parameter overrides in `params.json`; native engine configuration files are unchanged.
 
 ## Gateway
 
 - **Status:** each agent is polled on its own loop, so one slow agent can't delay the others. Two consecutive failures, or any auth failure, mark the machine `offline`.
 - **`/api/*`** passes requests through to agents (with an admin token), adds `last_seen`, `last_error`, and `active_requests`, and passes agent error codes and statuses back unchanged.
+- `POST /api/machines/{name}/configs` creates a launch profile on that machine and returns the new configuration.
 - **`/v1/models`** lists `machine/model` for every ready route, plus the bare model id when only one machine serves it.
 - **`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`** accept `model` as `machine/model` or a unique bare id. An ambiguous id returns 409 with a list of options. A model that isn't served returns 503 `not_ready` with the available models.
 - **Streaming:** SSE is relayed chunk by chunk. If the client disconnects, the engine connection is closed, which tells the engine to stop generating. `active_requests` is decremented in every case; Phase 4 draining depends on it.

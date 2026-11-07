@@ -14,6 +14,7 @@ from pantheon.agent.adapters.simulated import SCENARIOS, SimulatedAdapter
 from pantheon.agent.app import build_agent_app
 from pantheon.agent.core import MachineAgent
 from pantheon.agent.params import ParamStore
+from pantheon.agent.profiles import ProfileStore
 from pantheon.contracts import EngineKind
 
 
@@ -57,6 +58,7 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
     kind = cfg.adapter.get("kind")
     state = Path(cfg.state_dir).expanduser() if cfg.state_dir else None
     params = ParamStore(state / "params.json" if state else None)
+    profiles = ProfileStore(state / "profiles.json" if state else None)
     if kind == "simulated":
         settings = copy.deepcopy(SCENARIOS[cfg.adapter.get("scenario", cfg.name)])
         settings.public_url = cfg.public_url
@@ -64,7 +66,7 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
             if k in cfg.adapter:
                 setattr(settings, k, float(cfg.adapter[k]))
         adapter = SimulatedAdapter(settings)
-        agent = MachineAgent(cfg.name, adapter, EngineKind.SIMULATED, params)
+        agent = MachineAgent(cfg.name, adapter, EngineKind.SIMULATED, params, profiles)
         return build_agent_app(agent, cfg.token, [adapter.engine_router()])
     if kind == "lmstudio":
         from pantheon.agent.adapters.lmstudio import LMProfile, LMStudioAdapter, LMStudioSettings
@@ -79,7 +81,7 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
         if "lms_command" in a:
             cmd = a["lms_command"]
             settings.lms_command = [os.path.expanduser(c) for c in (cmd if isinstance(cmd, list) else [cmd])]
-        agent = MachineAgent(cfg.name, LMStudioAdapter(settings), EngineKind.LMSTUDIO, params)
+        agent = MachineAgent(cfg.name, LMStudioAdapter(settings), EngineKind.LMSTUDIO, params, profiles)
         return build_agent_app(agent, cfg.token)
     if kind == "strata":
         from pantheon.agent.adapters.strata import StrataAdapter, StrataSettings
@@ -90,6 +92,6 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
             raise ValueError(f"unknown strata adapter settings: {sorted(unknown)}")
         a = {k: v for k, v in cfg.adapter.items() if k != "kind"}
         a.setdefault("state_dir", str((state or Path("~/.local/state/pantheon").expanduser()) / "strata"))
-        agent = MachineAgent(cfg.name, StrataAdapter(StrataSettings(**a)), EngineKind.STRATA, params)
+        agent = MachineAgent(cfg.name, StrataAdapter(StrataSettings(**a)), EngineKind.STRATA, params, profiles)
         return build_agent_app(agent, cfg.token)
     raise ValueError(f"unknown adapter kind {kind!r}")

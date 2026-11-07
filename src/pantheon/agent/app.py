@@ -13,6 +13,7 @@ from pantheon.agent.core import AgentError, MachineAgent
 from pantheon.contracts import (
     Capabilities,
     ConfigParams,
+    CreateProfile,
     ErrorBody,
     ErrorCode,
     LogLine,
@@ -74,6 +75,10 @@ def build_agent_app(agent: MachineAgent, token: str, extra_routers: list[APIRout
     @api.get("/configs", response_model=list[ModelConfig])
     async def configs():
         return await agent.configs()
+
+    @api.post("/configs", response_model=ModelConfig, status_code=201)
+    async def create_profile(request: CreateProfile):
+        return await agent.create_profile(request)
 
     @api.get("/configs/{config_id:path}/params", response_model=ConfigParams, response_model_by_alias=True)
     async def get_params(config_id: str):

@@ -29,7 +29,7 @@ The client API has no keys unless `client_keys_env` is set in `[gateway]`.
 
 ## Machine agents
 
-Each agent listens on `:9101` and needs the token from the matching `PANTHEON_TOKEN_<MACHINE>` line. Parameter edits are stored in `<state_dir>/params.json` (default `~/.local/state/pantheon`).
+Each agent listens on `:9101` and needs the token from the matching `PANTHEON_TOKEN_<MACHINE>` line. Parameter edits are stored in `<state_dir>/params.json`, and launch profiles in `<state_dir>/profiles.json` (default `~/.local/state/pantheon`). Back up both files together.
 
 - **macOS (LM Studio):** a per-user LaunchAgent `dev.pantheon.agent` runs a wrapper that loads `~/.config/pantheon/agent.env` and execs the agent. It uses RunAtLoad and KeepAlive. Build the venv on python.org Framework Python because of the application firewall.
 - **Linux (Strata):** a systemd unit running as the user who owns the Strata install.

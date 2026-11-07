@@ -15,8 +15,10 @@ from collections import OrderedDict, deque
 
 from pantheon.agent.adapters.base import Adapter, EngineError, EngineProbe
 from pantheon.agent.params import ParamError, ParamStore, validate
+from pantheon.agent.profiles import ProfileStore
 from pantheon.contracts import (
     ConfigParams,
+    CreateProfile,
     EngineKind,
     ErrorBody,
     ErrorCode,
@@ -45,9 +47,11 @@ class AgentError(Exception):
 
 
 class MachineAgent:
-    def __init__(self, name: str, adapter: Adapter, engine: EngineKind, params: ParamStore | None = None):
+    def __init__(self, name: str, adapter: Adapter, engine: EngineKind, params: ParamStore | None = None,
+                 profiles: ProfileStore | None = None):
         self.name = name
         self.params = params or ParamStore(None)
+        self.profiles = profiles or ProfileStore(None)
         # Effective parameter values the serving model was started with (None: started outside pantheon).
         self._started_values: dict | None = None
         self.adapter = adapter
@@ -72,6 +76,11 @@ class MachineAgent:
         except Exception as exc:  # adapter bugs must not kill the agent
             self._set(MachineState.FAILED, f"probe failed: {exc}")
             return
+        # LM Studio can identify the loaded model, but not which Pantheon profile launched it.
+        # Keep the profile identity while this agent observes the same serving instance.
+        if (probe.serving and self._probe.serving and self.profiles.get(self._probe.config_id or "")
+                and probe.served_models == self._probe.served_models):
+            probe.config_id = self._probe.config_id
         self._probe = probe
         if probe.serving:
             msg = probe.message
@@ -157,8 +166,13 @@ class MachineAgent:
             return op
 
     async def _base_config(self, config_id: str) -> ModelConfig:
+        profile = self.profiles.get(config_id)
+        source_id = profile["source_config_id"] if profile else config_id
         for cfg in await self.adapter.list_configs():
-            if cfg.id == config_id:
+            if cfg.id == source_id:
+                if profile:
+                    return cfg.model_copy(update={"id": config_id, "label": profile["label"],
+                                                  "profile": True, "source_config_id": source_id})
                 return cfg
         raise AgentError(ErrorCode.NOT_FOUND, f"unknown config {config_id!r}", 404)
 
@@ -173,7 +187,30 @@ class MachineAgent:
         return cfg.model_copy(update={"edited": True})
 
     async def configs(self) -> list[ModelConfig]:
-        return [self._effective(c) for c in await self.adapter.list_configs()]
+        native = await self.adapter.list_configs()
+        out = [self._effective(c) for c in native]
+        by_id = {c.id: c for c in native}
+        for profile_id, record in self.profiles.all().items():
+            if source := by_id.get(record["source_config_id"]):
+                base = source.model_copy(update={"id": profile_id, "label": record["label"],
+                                                 "profile": True, "source_config_id": source.id})
+                out.append(self._effective(base))
+        return out
+
+    async def create_profile(self, request: CreateProfile) -> ModelConfig:
+        label = request.label.strip()
+        if not label or len(label) > 80:
+            raise AgentError(ErrorCode.INVALID, "profile name must be 1–80 characters", 400)
+        configs = await self.configs()
+        if any(c.profile and c.label.casefold() == label.casefold() for c in configs):
+            raise AgentError(ErrorCode.INVALID, f"profile {label!r} already exists", 409)
+        source = await self._base_config(request.source_config_id)
+        source_id = source.source_config_id or source.id
+        profile_id = self.profiles.create(label, source_id)
+        if overrides := self.params.get(request.source_config_id):
+            self.params.update(profile_id, overrides)
+        self._note(f"profile {label} created from {request.source_config_id}")
+        return self._effective(await self._base_config(profile_id))
 
     async def _find_config(self, config_id: str) -> ModelConfig:
         return self._effective(await self._base_config(config_id))

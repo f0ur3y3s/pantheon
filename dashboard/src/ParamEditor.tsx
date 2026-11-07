@@ -130,7 +130,7 @@ export function ParamEditor({
     <section className="params" aria-label={`Parameters for ${label}`}>
       <div className="params-head">
         <span className="label">Parameters</span>
-        <span className="sub model">{configId}</span>
+        {!configId.startsWith("profile/") && <span className="sub model">{configId}</span>}
       </div>
       {params.schema.map((s) => {
         const id = `p-${machine}-${configId}-${s.key}`;

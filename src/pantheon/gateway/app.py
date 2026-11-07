@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from pantheon.contracts import ErrorBody, ErrorCode, OperationRequest, ParamUpdate
+from pantheon.contracts import CreateProfile, ErrorBody, ErrorCode, OperationRequest, ParamUpdate
 from pantheon.gateway.clients import ClientModel, client_configs
 from pantheon.gateway.config import GatewayConfig
 from pantheon.gateway.machines import AgentCallError, MachineRegistry
@@ -92,6 +92,11 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
     async def configs(name: str):
         client, _ = registry.get(name)
         return await client.call("GET", "/v1/configs")
+
+    @api.post("/machines/{name}/configs", status_code=201)
+    async def create_profile(name: str, request: CreateProfile):
+        client, _ = registry.get(name)
+        return await client.call("POST", "/v1/configs", json=request.model_dump(mode="json"))
 
     @api.get("/machines/{name}/configs/{config_id:path}/params")
     async def get_params(name: str, config_id: str):

@@ -31,6 +31,13 @@ export interface ModelConfig {
   parallel: number | null;
   est_memory_mib: number | null;
   edited: boolean;
+  profile: boolean;
+  source_config_id: string | null;
+}
+
+export interface CreateProfile {
+  label: string;
+  source_config_id: string;
 }
 
 export interface Resources {

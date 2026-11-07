@@ -57,6 +57,13 @@ class ModelConfig(BaseModel):
     est_memory_mib: int | None = None
     details: dict[str, Any] = Field(default_factory=dict)
     edited: bool = False  # has pantheon overrides (context/parallel above already reflect them)
+    profile: bool = False  # user-created launch profile
+    source_config_id: str | None = None
+
+
+class CreateProfile(BaseModel):
+    label: str
+    source_config_id: str
 
 
 class ParamType(StrEnum):

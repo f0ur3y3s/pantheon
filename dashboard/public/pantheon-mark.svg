@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Pantheon">
+  <style>
+    path { fill: #345d9d; }
+    @media (prefers-color-scheme: dark) { path { fill: #a6bedf; } }
+  </style>
+  <path opacity=".5" d="M5 15h7L9.5 28h-7z" />
+  <path opacity=".75" d="M15 6h7l-4.5 22h-7z" />
+  <path d="M25 10h7l-3.5 18h-7z" />
+</svg>

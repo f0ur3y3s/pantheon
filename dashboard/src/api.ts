@@ -1,4 +1,4 @@
-import type { ClientConfigs, ConfigParams, ParamValue, ErrorBody, LogLine, MachineView, ModelConfig, Operation, OperationKind } from "./contracts";
+import type { ClientConfigs, ConfigParams, CreateProfile, ParamValue, ErrorBody, LogLine, MachineView, ModelConfig, Operation, OperationKind } from "./contracts";
 
 const TOKEN_KEY = "pantheon.adminToken";
 
@@ -54,6 +54,11 @@ export const api = {
   authInfo: () => call<{ required: boolean }>("/api/auth"),
   machines: () => call<MachineView[]>("/api/machines"),
   configs: (m: string) => call<ModelConfig[]>(`/api/machines/${encodeURIComponent(m)}/configs`),
+  createProfile: (m: string, request: CreateProfile) =>
+    call<ModelConfig>(`/api/machines/${encodeURIComponent(m)}/configs`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
   submit: (m: string, kind: OperationKind, config_id?: string) =>
     call<Operation>(`/api/machines/${encodeURIComponent(m)}/operations`, {
       method: "POST",

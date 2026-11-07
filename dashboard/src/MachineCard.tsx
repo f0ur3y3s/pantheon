@@ -12,7 +12,7 @@ function mib(n: number | null | undefined): string {
   return n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`;
 }
 
-function Meter({ label, used, total }: { label: string; used: number | null; total: number | null }) {
+function Meter({ machine, label, used, total }: { machine: string; label: string; used: number | null; total: number | null }) {
   if (used == null || !total) return null;
   const pct = Math.min(100, Math.round((used / total) * 100));
   return (
@@ -23,7 +23,7 @@ function Meter({ label, used, total }: { label: string; used: number | null; tot
           {mib(used)} / {mib(total)}
         </span>
       </div>
-      <div className="meter-track" role="progressbar" aria-label={label} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div className="meter-track" role="progressbar" aria-label={`${machine} ${label}`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
         <div className={`meter-fill ${pct > 90 ? "hot" : ""}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -34,12 +34,17 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   const st = m.status;
   const offline = st.state === "offline";
   const [configs, setConfigs] = useState<ModelConfig[] | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [configRetry, setConfigRetry] = useState(0);
   const [selected, setSelected] = useState<string>("");
   const [op, setOp] = useState<Operation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [creating, setCreating] = useState(false);
   // Keyed on what is serving so the snippet regenerates after a switch.
   const servingKey = `${st.active_config}|${st.served_models.join(",")}`;
   const loadClientConfig = useCallback(() => api.clientConfig(m.name), [m.name]);
@@ -49,14 +54,18 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   // Load configs once the machine is reachable.
   useEffect(() => {
     if (offline || configs) return;
+    let alive = true;
+    setConfigError(null);
     api.configs(m.name).then(
       (c) => {
+        if (!alive) return;
         setConfigs(c);
-        setSelected((s) => s || st.active_config || c[0]?.id || "");
+        setSelected((s) => c.some((item) => item.id === s) ? s : st.active_config || c[0]?.id || "");
       },
-      () => setConfigs(null),
+      (e) => alive && setConfigError(e instanceof ApiError ? e.body.message : String(e)),
     );
-  }, [offline, configs, m.name, st.active_config]);
+    return () => { alive = false; };
+  }, [offline, configs, configRetry, m.name, st.active_config]);
 
   // Adopt an operation already in flight (e.g. after a page reload).
   useEffect(() => {
@@ -116,6 +125,25 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
     }
   }
 
+  async function createProfile(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selected || !profileName.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const profile = await api.createProfile(m.name, { label: profileName.trim(), source_config_id: selected });
+      setConfigs((current) => [...(current ?? []), profile]);
+      setSelected(profile.id);
+      setProfileName("");
+      setShowCreate(false);
+      setShowEdit(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.body.message : String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const activeLabel = useMemo(
     () => configs?.find((c) => c.id === st.active_config)?.label ?? st.active_config,
     [configs, st.active_config],
@@ -132,45 +160,47 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
             {r?.gpu_name ? ` · ${r.gpu_name}` : ""}
           </p>
         </div>
-        <span className={`pill pill-${st.state}`}>{st.state}</span>
+        <span className={`machine-state state-label-${st.state}`}><span className="state-dot" aria-hidden="true" />{st.state}</span>
       </header>
 
       <section className="serving">
         {serving ? (
           <>
-            <div className="label">Serving</div>
             <div className="model">{st.served_models.join(", ") || "–"}</div>
             <div className="sub">
               {activeLabel}
               {m.active_requests > 0 ? ` · ${m.active_requests} active request${m.active_requests > 1 ? "s" : ""}` : ""}
             </div>
           </>
-        ) : (
-          <div className="sub">{offline ? "Agent unreachable" : st.state === "idle" ? "No model loaded" : " "}</div>
-        )}
+        ) : null}
         {st.message && <p className={`note ${st.state === "failed" || offline ? "bad" : ""}`}>{st.message}</p>}
       </section>
 
       {r && (
         <section className="meters">
-          <Meter label="VRAM" used={r.vram_used_mib} total={r.vram_total_mib} />
-          <Meter label="RAM" used={r.ram_used_mib} total={r.ram_total_mib} />
+          <Meter machine={m.name} label="VRAM" used={r.vram_used_mib} total={r.vram_total_mib} />
+          <Meter machine={m.name} label="RAM" used={r.ram_used_mib} total={r.ram_total_mib} />
         </section>
       )}
 
       {op && (running || op.status === "failed" || Date.now() / 1000 - (op.finished_at ?? 0) < 8) && (
         <section className={`op op-${op.status}`} aria-live="polite">
-          <div className="op-head">
-            <span>
-              <span className="op-kind">{op.kind}</span>
-              {op.config_id ? <span className="model"> {op.config_id}</span> : null}
-            </span>
-            <span className="num">{op.status === "failed" ? "failed" : `${Math.round(op.progress * 100)}%`}</span>
-          </div>
-          <div className="meter-track">
-            <div className="meter-fill" style={{ width: `${Math.round(op.progress * 100)}%` }} />
-          </div>
-          <div className="sub">{op.error ? op.error.message : op.step}</div>
+          {running ? (
+            <>
+              <div className="op-head">
+                <span><span className="op-kind">{op.kind}</span>{configs?.find((c) => c.id === op.config_id)?.label ? <span> · {configs.find((c) => c.id === op.config_id)?.label}</span> : null}</span>
+                <span className="num">{Math.round(op.progress * 100)}%</span>
+              </div>
+              <div className="meter-track">
+                <div className="meter-fill" style={{ width: `${Math.round(op.progress * 100)}%` }} />
+              </div>
+              <div className="sub">{op.step}</div>
+            </>
+          ) : (
+            <p className="op-result">
+              {op.status === "failed" ? `${op.kind} failed: ${op.error?.message ?? op.step}` : `${op.kind === "stop" ? "Stopped" : op.kind === "switch" ? "Switched" : "Started"} successfully`}
+            </p>
+          )}
         </section>
       )}
 
@@ -178,18 +208,21 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
         <footer className="controls">
           <select
             aria-label={`Configuration for ${m.name}`}
-            value={selected}
+            value={configs ? selected : ""}
             disabled={busy || !configs}
             onChange={(e) => setSelected(e.target.value)}
           >
+            {!configs && <option value="">{configError ? "Configurations unavailable" : "Loading configurations…"}</option>}
             {(configs ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
+                {c.profile ? " · profile" : ""}
                 {c.edited ? " · edited" : ""}
                 {c.id === st.active_config ? " (active)" : ""}
               </option>
             ))}
           </select>
+          {configError && <div className="config-error"><span>{configError}</span><button type="button" onClick={() => setConfigRetry((n) => n + 1)}>Retry</button></div>}
           <div className="buttons">
             {action && (
               <button className="primary" disabled={busy || !selected} onClick={() => submit(action)}>
@@ -204,15 +237,30 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
             <button className="ghost" aria-expanded={showEdit} disabled={!selected} onClick={() => setShowEdit((v) => !v)}>
               Edit
             </button>
+            <button className="ghost" aria-expanded={showCreate} disabled={!selected} onClick={() => setShowCreate((v) => !v)}>
+              New profile
+            </button>
             {serving && (
               <button className="ghost" aria-expanded={showConnect} onClick={() => setShowConnect((v) => !v)}>
-                Connect
+                Direct connect
               </button>
             )}
             <button className="ghost" aria-expanded={showLogs} onClick={() => setShowLogs((v) => !v)}>
               Logs
             </button>
           </div>
+          {showCreate && (
+            <form className="create-profile" onSubmit={createProfile}>
+              <label htmlFor={`profile-name-${m.name}`}>Profile name</label>
+              <input id={`profile-name-${m.name}`} value={profileName} maxLength={80} autoFocus
+                onChange={(e) => setProfileName(e.target.value)} placeholder="Name this configuration" />
+              <p className="sub">Copies {configs?.find((c) => c.id === selected)?.label ?? selected} and its saved parameter edits</p>
+              <div className="buttons">
+                <button className="primary" type="submit" disabled={creating || !profileName.trim()}>Create profile</button>
+                <button type="button" onClick={() => setShowCreate(false)}>Cancel</button>
+              </div>
+            </form>
+          )}
           {error && <p className="note bad">{error}</p>}
         </footer>
       )}
@@ -234,7 +282,7 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
         <ConnectPanel
           key={servingKey}
           load={loadClientConfig}
-          note="Talks to this machine's engine directly. Requests bypass the gateway, so they are not drained during a switch; prefer the gateway config above."
+          note="Connects directly to this machine's engine. Requests bypass gateway draining during a switch."
         />
       )}
 

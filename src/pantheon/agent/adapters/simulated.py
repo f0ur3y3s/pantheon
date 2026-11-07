@@ -89,7 +89,7 @@ class SimulatedAdapter:
         self._engine_log(f"loading {config.model} (ctx={config.context})")
         for i in range(1, steps + 1):
             await asyncio.sleep(self.s.load_seconds / steps)
-            if config.id in self.s.fail_configs and i == 6:
+            if (config.source_config_id or config.id) in self.s.fail_configs and i == 6:
                 self._engine_log("CUDA error: out of memory while allocating KV cache")
                 raise EngineError(
                     "engine exited while loading: out of memory allocating KV cache",

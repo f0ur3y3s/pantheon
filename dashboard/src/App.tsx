@@ -15,6 +15,7 @@ function Login({ onDone, error }: { onDone: () => void; error: string | null }) 
           onDone();
         }}
       >
+        <img className="brand-mark" src="/pantheon-mark.svg" alt="" />
         <h1>Pantheon</h1>
         <label htmlFor="token">Admin token</label>
         <input id="token" type="password" autoComplete="current-password" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
@@ -81,6 +82,8 @@ export function App() {
   }
 
   const ready = machines?.filter((m) => m.status.state === "ready").length ?? 0;
+  const busyCount = machines?.filter((m) => ["loading", "stopping", "draining"].includes(m.status.state)).length ?? 0;
+  const offlineCount = machines?.filter((m) => m.status.state === "offline").length ?? 0;
   // Regenerate the gateway snippet whenever the set of served models changes.
   const servingKey = (machines ?? [])
     .filter((m) => m.status.state === "ready")
@@ -90,11 +93,8 @@ export function App() {
   return (
     <div className="shell">
       <header className="top">
-        <h1>Pantheon</h1>
-        <p className="sub">
-          {machines ? `${ready} of ${machines.length} machines serving` : "Connecting…"}
-          {gatewayError && <span className="bad"> · {gatewayError}</span>}
-        </p>
+        <div className="identity"><img className="brand-mark" src="/pantheon-mark.svg" alt="" /><span>Pantheon</span></div>
+        <div className="top-status"><span className={`live-dot ${gatewayError ? "is-error" : ""}`} />{gatewayError ? "Gateway unavailable" : machines ? "Gateway connected" : "Connecting to gateway"}</div>
         {authRequired && (
           <button
             className="ghost"
@@ -107,11 +107,24 @@ export function App() {
           </button>
         )}
       </header>
+      <section className="overview" aria-label="Fleet overview">
+        <div className="overview-copy">
+          <h1>Machines</h1>
+        </div>
+        <div className="fleet-summary" aria-label="Fleet status summary">
+          <div><strong className="num">{machines ? ready : "–"}</strong><span>Serving</span></div>
+          <div><strong className="num">{machines ? busyCount : "–"}</strong><span>In progress</span></div>
+          <div><strong className="num">{machines ? offlineCount : "–"}</strong><span>Offline</span></div>
+        </div>
+      </section>
+      {gatewayError && <p className="gateway-error" role="alert">{gatewayError}</p>}
+      <main className="grid">
+        {machines?.map((m) => <MachineCard key={m.name} m={m} onChanged={refresh} />)}
+      </main>
       <section className="gateway-connect">
         <header>
           <div>
-            <h2>Connect a client</h2>
-            <p className="sub">One address for every machine. Copy into opencode or pi.</p>
+            <h2>Connect through gateway</h2>
           </div>
           <button className="ghost" aria-expanded={showConnect} onClick={() => setShowConnect((v) => !v)}>
             {showConnect ? "Hide" : "Show"}
@@ -119,9 +132,6 @@ export function App() {
         </header>
         {showConnect && <ConnectPanel key={servingKey} load={api.gatewayClientConfig} />}
       </section>
-      <main className="grid">
-        {machines?.map((m) => <MachineCard key={m.name} m={m} onChanged={refresh} />)}
-      </main>
     </div>
   );
 }
