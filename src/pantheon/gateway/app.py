@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pantheon.contracts import CreateProfile, ErrorBody, ErrorCode, OperationRequest, ParamUpdate
 from pantheon.gateway.clients import ClientModel, client_configs
+from pantheon.gateway.summary import build_summary
 from pantheon.gateway.config import GatewayConfig
 from pantheon.gateway.machines import AgentCallError, MachineRegistry
 
@@ -83,6 +84,11 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
     @api.get("/machines")
     async def machines():
         return [v.public() for v in registry.views.values()]
+
+    @api.get("/summary")
+    async def summary():
+        """Flat, display-ready status for dashboards such as Homepage's customapi widget."""
+        return build_summary(registry)
 
     @api.get("/machines/{name}")
     async def machine(name: str):

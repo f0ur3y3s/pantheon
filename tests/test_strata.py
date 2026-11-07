@@ -127,10 +127,10 @@ async def test_foreign_server_is_adopted_then_taken_over(strata_env, tmp_path):
                                 "--port", str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **flags)
     try:
         agent, a = make(strata_env, port=port)
-        for _ in range(50):
-            if await a._health(timeout=0.5):
+        for _ in range(100):  # wait until the model is loaded, not just until the API answers
+            if (h := await a._health(timeout=0.5)) and h.get("loaded"):
                 break
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
         await agent.reconcile()
         st = await agent.status()
         assert st.state == MachineState.READY and st.active_config == "iq3_xxs-32k"
