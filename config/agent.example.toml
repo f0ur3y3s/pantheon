@@ -1,0 +1,9 @@
+name = "pythia"
+host = "192.0.2.11"          # bind to the LAN interface explicitly (Zeus has several)
+port = 9101
+public_url = "http://192.0.2.11:9101"
+token_env = "PANTHEON_AGENT_TOKEN"
+
+[adapter]
+kind = "simulated"              # phase 3: "strata" | "lmstudio" | "llama.cpp"
+scenario = "pythia"

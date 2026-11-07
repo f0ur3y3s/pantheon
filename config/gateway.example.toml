@@ -1,0 +1,21 @@
+[gateway]
+host = "0.0.0.0"
+port = 9000
+# sign-in token: PANTHEON_ADMIN_TOKEN from the environment or .env (unset = no sign-in)
+# client_keys_env = "PANTHEON_CLIENT_KEYS"   # comma-separated; omit for an open LAN endpoint
+dashboard_dir = "dashboard/dist"
+
+[[machines]]
+name = "pythia"
+url = "http://192.0.2.11:9101"
+token_env = "PANTHEON_TOKEN_PYTHIA"
+
+[[machines]]
+name = "mbp"
+url = "http://192.0.2.12:9101"
+token_env = "PANTHEON_TOKEN_MBP"
+
+[[machines]]
+name = "zeus"
+url = "http://192.0.2.13:9101"
+token_env = "PANTHEON_TOKEN_ZEUS"
