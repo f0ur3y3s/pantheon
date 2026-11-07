@@ -148,6 +148,7 @@ class StrataAdapter:
             p = psutil.Process(info["pid"])
             if abs(p.create_time() - info["create_time"]) < 1:  # pid + start time: not a recycled pid
                 self._proc, self._config_id = p, info.get("config_id")
+                self._own_pid = p.pid  # we launched it (in its own console group on Windows)
                 self._note(f"re-attached to strata server pid {p.pid} ({self._config_id})")
                 return
         except (OSError, ValueError, KeyError, psutil.Error):
@@ -263,7 +264,14 @@ class StrataAdapter:
         log.flush()
         kwargs: dict = {"cwd": str(self.control), "stdout": log, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL}
         if IS_WINDOWS:
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # Own (hidden) console + own process group: the server must not share the agent's console,
+            # or restarting the agent (closing that console) would kill the engine. Stop signals are sent
+            # through a helper that attaches to this console (see _windows_ctrl_break).
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0  # SW_HIDE
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NEW_CONSOLE
+            kwargs["startupinfo"] = si
         else:
             kwargs["start_new_session"] = True  # survives agent restarts; re-attached via the pid file
         env = dict(os.environ, PYTHONUNBUFFERED="1")
@@ -275,6 +283,7 @@ class StrataAdapter:
             log.close()
         self._proc = psutil.Process(popen.pid)
         self._popen = popen  # keep a handle so the child is reaped
+        self._own_pid = popen.pid
         self._config_id = config.id
         self.pid_file.write_text(json.dumps({"pid": popen.pid, "create_time": self._proc.create_time(), "config_id": config.id}))
 
@@ -337,7 +346,7 @@ class StrataAdapter:
             children = []
         await report(0.05, f"draining (pid {proc.pid})")
         self._note(f"stop: signalling strata server pid {proc.pid} to drain")
-        self._send_stop_signal(proc)
+        await asyncio.to_thread(self._send_stop_signal, proc)  # may run a helper process; keep the loop free
 
         deadline = time.monotonic() + self.s.drain_timeout
         api_gone_at: float | None = None
@@ -363,20 +372,40 @@ class StrataAdapter:
     def _send_stop_signal(self, proc: psutil.Process) -> None:
         try:
             if IS_WINDOWS:
-                # CTRL_BREAK targets a console *process group*. Sending it to a pid that is not a group leader
-                # can hit every process on our console (including the agent), so only signal servers we
-                # launched with CREATE_NEW_PROCESS_GROUP in this agent process. Anything else is terminated
-                # without a drain; the gateway drains its own traffic before asking for a stop.
-                popen = getattr(self, "_popen", None)
-                if popen is not None and popen.pid == proc.pid and popen.poll() is None:
-                    os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
+                if getattr(self, "_own_pid", None) == proc.pid:
+                    self._windows_ctrl_break(proc.pid)
                 else:
-                    self._note(f"pid {proc.pid} was not started by this agent; Windows cannot drain it, terminating")
+                    # A server someone else launched may share a console with an interactive shell, where
+                    # a console-wide break would hit unrelated processes. Terminate it without a drain.
+                    self._note(f"pid {proc.pid} was not started by pantheon; Windows cannot drain it, terminating")
                     proc.terminate()
             else:
                 proc.send_signal(signal.SIGINT)
-        except (OSError, psutil.Error) as exc:
+        except (OSError, psutil.Error, subprocess.SubprocessError) as exc:
             self._note(f"stop signal failed ({exc}); will terminate")
+
+    @staticmethod
+    def _windows_ctrl_break(pid: int) -> None:
+        """Send CTRL_BREAK to the process group `pid` (a server we launched with its own console + group).
+
+        GenerateConsoleCtrlEvent only reaches processes on the caller's console, so a short-lived helper with
+        no console of its own attaches to the server's console, ignores the event itself, and raises it for
+        the server's group. The agent's own console is never involved.
+        """
+        helper = """
+import ctypes, sys
+k = ctypes.windll.kernel32
+pid = int(sys.argv[1])
+k.FreeConsole()  # a venv launcher may have given us a fresh console; we can only attach without one
+if not k.AttachConsole(pid):
+    sys.exit(2)
+k.SetConsoleCtrlHandler(None, True)  # don't let the break end this helper
+sys.exit(0 if k.GenerateConsoleCtrlEvent(1, pid) else 3)  # 1 = CTRL_BREAK_EVENT, to group `pid`
+"""
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+        rc = subprocess.run([sys.executable, "-c", helper, str(pid)], creationflags=flags, timeout=15).returncode
+        if rc != 0:
+            raise OSError(f"ctrl-break helper exited with {rc} (2 = attach failed, 3 = event failed)")
 
     async def _terminate_tree(self, children: list[psutil.Process] | None = None) -> None:
         procs = [p for p in [self._proc, *(children or [])] if p is not None]
@@ -398,6 +427,7 @@ class StrataAdapter:
 
     def _clear(self) -> None:
         self._proc = None
+        self._own_pid = None
         self._config_id = None
         self.pid_file.unlink(missing_ok=True)
         self.ready_file.unlink(missing_ok=True)

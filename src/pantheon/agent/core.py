@@ -265,12 +265,12 @@ class MachineAgent:
 
     async def _do_stop(self, op: Operation, span: tuple[float, float]) -> None:
         probe = await self.adapter.probe()
-        if not probe.serving:
-            self._note("stop: nothing serving")
-            self._probe = EngineProbe(serving=False)
-            self._set(MachineState.IDLE)
-            return
-        self._set(MachineState.STOPPING, f"stopping {probe.config_id or 'engine'}")
+        # Always let the adapter stop: a server can be running without serving (e.g. its engine died),
+        # and only the adapter knows how to find and end it. Adapters treat "nothing running" as success.
+        if probe.serving:
+            self._set(MachineState.STOPPING, f"stopping {probe.config_id or 'engine'}")
+        else:
+            self._note("stop: nothing serving; cleaning up any leftover engine process")
         await self.adapter.stop(self._reporter(op, span))
         self._probe = EngineProbe(serving=False)
         self._started_values = None

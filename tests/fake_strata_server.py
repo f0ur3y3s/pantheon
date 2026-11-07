@@ -63,6 +63,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        if self.path == "/__engine_died":  # test hook: the engine exits, the API stays up
+            state["loaded"] = False
+            return self._json(200, {"ok": True})
         if state["stopping"] or not state["loaded"]:
             return self._json(503, {"error": {"message": "stopping"}})
         n = int(body.get("max_tokens") or 8)

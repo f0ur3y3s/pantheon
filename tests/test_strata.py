@@ -107,6 +107,7 @@ async def test_stop_drains_in_flight_stream_first(strata_env, monkeypatch):
     op = await agent.submit(OperationRequest(kind=OperationKind.STOP))
     assert await task == 31  # all 30 tokens + [DONE]: the stop waited for the request
     assert (await wait_op(agent, op.id, timeout=30)).status == OperationStatus.SUCCEEDED
+    assert "stop signal failed" not in " ".join(l.text for l in await agent.logs(200))
 
 
 async def test_failed_load_reports_last_log_line(strata_env, monkeypatch):
@@ -156,3 +157,50 @@ async def test_agent_restart_reattaches_to_its_server(strata_env):
     assert st.state == MachineState.READY and st.active_config == "iq3_xxs-32k" and st.message is None
     op = await wait_op(agent2, (await agent2.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=40)
     assert op.status == OperationStatus.SUCCEEDED
+
+
+async def test_stop_cleans_up_a_server_whose_engine_died(strata_env):
+    agent, a = make(strata_env)
+    await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="iq3_xxs-32k"))).id, timeout=20)
+    pid = a._proc.pid
+    async with httpx.AsyncClient(timeout=5) as http:
+        await http.post(f"{a.local_url}/__engine_died", json={})
+    await agent.reconcile()
+    assert (await agent.status()).state == MachineState.IDLE  # running process, nothing loaded
+    # a start must not be blocked forever: stop cleans the half-dead server up, then start works
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=30)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
+    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="iq3_xxs-32k"))).id, timeout=20)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
+    await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=30)
+
+
+async def test_restarted_agent_still_drains_the_server_it_launched(strata_env, monkeypatch):
+    monkeypatch.setenv("FAKE_STRATA_TPS", "20")
+    agent, a = make(strata_env)
+    await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="iq3_xxs-32k"))).id, timeout=20)
+    # agent process restarts: a fresh adapter re-attaches through the pid file (no Popen handle)
+    agent2, a2 = make(strata_env, port=a.s.port)
+    await agent2.reconcile()
+    assert a2._proc is not None and getattr(a2, "_popen", None) is None
+
+    async def stream():
+        lines = 0
+        async with httpx.AsyncClient(timeout=30) as http:
+            async with http.stream("POST", f"{a2.local_url}/v1/chat/completions",
+                                   json={"model": "m", "stream": True, "max_tokens": 30, "messages": []}) as r:
+                async for line in r.aiter_lines():
+                    lines += line.startswith("data:")
+        return lines
+
+    task = asyncio.create_task(stream())
+    await asyncio.sleep(0.3)
+    started = asyncio.get_running_loop().time()
+    op = await agent2.submit(OperationRequest(kind=OperationKind.STOP))
+    assert await task == 31  # drained, not terminated mid-stream
+    # drained promptly, not via the drain_timeout (20s) fallback
+    assert asyncio.get_running_loop().time() - started < 10
+    assert (await wait_op(agent2, op.id, timeout=30)).status == OperationStatus.SUCCEEDED
+    logs = " ".join(l.text for l in await agent2.logs(200))
+    assert "cannot drain" not in logs and "stop signal failed" not in logs
