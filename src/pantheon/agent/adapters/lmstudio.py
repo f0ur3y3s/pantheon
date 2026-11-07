@@ -18,6 +18,8 @@ import os
 import re
 import time
 from collections import deque
+from datetime import datetime
+from pathlib import Path
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -49,6 +51,7 @@ class LMStudioSettings:
     readiness: str = "chat"  # "chat" (1-token completion) | "models" | "none"
     load_timeout: float = 900.0
     readiness_timeout: float = 180.0
+    server_log_dir: str = "~/.lmstudio/server-logs"  # <dir>/<YYYY-MM>/<YYYY-MM-DD>.N.log
 
 
 class LMStudioAdapter:
@@ -264,7 +267,44 @@ class LMStudioAdapter:
         })
 
     async def engine_logs(self, lines: int) -> list[LogLine]:
-        return list(self._log)[-lines:]
+        server = await asyncio.to_thread(read_server_log, Path(self.s.server_log_dir).expanduser(), lines)
+        return sorted([*list(self._log)[-lines:], *server], key=lambda l: l.ts)[-lines:]
+
+
+LOG_LINE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\](.*)$")
+TAIL_BYTES = 512 * 1024
+
+
+def read_server_log(log_dir: Path, lines: int) -> list[LogLine]:
+    """Recent LM Studio server activity, without our own CLI traffic or request bodies.
+
+    The log records every `lms` call (the agent polls `lms ps` every few seconds) and the full JSON body
+    of each request, prompts included. Keep timestamped lines only, drop `Client=lms-cli` noise, and cut
+    "Received request: POST to /v1/... with body {" down to the request line.
+    """
+    try:
+        # newest by mtime; ties (same second) go to the later path, which sorts by month/date
+        newest = max(log_dir.glob("*/*.log"), key=lambda f: (f.stat().st_mtime, str(f)))
+        with newest.open("rb") as f:
+            f.seek(max(0, newest.stat().st_size - TAIL_BYTES))
+            text = f.read().decode("utf-8", "replace")
+    except (ValueError, OSError):  # no log files yet / unreadable
+        return []
+    out: list[LogLine] = []
+    for raw in text.splitlines():
+        m = LOG_LINE.match(raw)
+        if not m or "Client=lms-cli" in raw or "/lmstudio-greeting" in raw:
+            continue  # continuation lines (bodies), our own `lms` polling, and its server greeting checks
+        stamp, rest = m.groups()
+        if " with body" in rest:
+            rest = rest.split(" with body", 1)[0]
+        rest = rest.rstrip(" {")  # e.g. "Generated prediction: {" -> the JSON that follows is not shown
+        try:
+            ts = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").timestamp()  # LM Studio logs local time
+        except ValueError:
+            continue
+        out.append(LogLine(ts=ts, source="engine", text=rest.strip()))
+    return out[-lines:]
 
 
 _mac_cache: tuple[float, Resources | None] = (0.0, None)

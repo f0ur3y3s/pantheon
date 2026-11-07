@@ -78,6 +78,8 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
             include_unprofiled=a.get("include_unprofiled", True),
             readiness=a.get("readiness", "chat"),
         )
+        if "server_log_dir" in a:
+            settings.server_log_dir = a["server_log_dir"]
         if "lms_command" in a:
             cmd = a["lms_command"]
             settings.lms_command = [os.path.expanduser(c) for c in (cmd if isinstance(cmd, list) else [cmd])]

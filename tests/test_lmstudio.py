@@ -114,3 +114,53 @@ async def test_server_down_is_idle_and_start_brings_it_up(lms_state):
     op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="qwen36"))).id)
     assert op.status == OperationStatus.SUCCEEDED, op.error
     assert json.loads(lms_state.read_text())["server"] is True
+
+
+SAMPLE_LOG = """\
+[2026-11-06 23:01:42][INFO][LMSAuthenticator][Client=lms-cli][Endpoint=listLoaded] Listing loaded models
+[2026-11-06 23:01:42][DEBUG][LMSAuthenticator][Client=lms-cli] Client disconnected.
+[2026-11-06 23:01:54][DEBUG] Received request: POST to /v1/chat/completions with body {
+  "model": "qwen36",
+  "messages": [
+    {
+      "role": "user",
+      "content": "a private prompt"
+    }
+  ],
+  "stream": false
+}
+[2026-11-06 23:01:54][INFO][qwen36] Running chat completion on conversation with 1 messages.
+[2026-11-06 23:01:55][INFO][qwen36] Prompt processing progress: 99.7%
+[2026-11-06 23:01:56][DEBUG] Received request: GET to /lmstudio-greeting
+[2026-11-06 23:01:57][INFO][qwen36] Generated prediction: {
+  "id": "chatcmpl-1",
+  "choices": [{"message": {"content": "a private answer"}}]
+}
+"""
+
+
+async def test_engine_logs_show_server_activity_without_cli_noise_or_prompts(lms_state, tmp_path):
+    old = tmp_path / "server-logs" / "2026-10"
+    new = tmp_path / "server-logs" / "2026-11"
+    old.mkdir(parents=True)
+    new.mkdir(parents=True)
+    (old / "2026-10-31.1.log").write_text("[2026-10-31 10:00:00][INFO] old file\n")
+    (new / "2026-11-06.1.log").write_text(SAMPLE_LOG)
+    agent, adapter = make()
+    adapter.s.server_log_dir = str(tmp_path / "server-logs")
+
+    texts = [l.text for l in await agent.logs(50) if l.source == "engine"]
+    assert texts == [
+        "[DEBUG] Received request: POST to /v1/chat/completions",
+        "[INFO][qwen36] Running chat completion on conversation with 1 messages.",
+        "[INFO][qwen36] Prompt processing progress: 99.7%",
+        "[INFO][qwen36] Generated prediction:",
+    ]
+    joined = " ".join(texts)
+    assert "private prompt" not in joined and "private answer" not in joined and "greeting" not in joined and "lms-cli" not in joined and "old file" not in joined
+
+
+async def test_engine_logs_tolerate_missing_log_dir(lms_state, tmp_path):
+    agent, adapter = make()
+    adapter.s.server_log_dir = str(tmp_path / "nope")
+    assert [l for l in await agent.logs(50) if l.source == "engine"] == []
