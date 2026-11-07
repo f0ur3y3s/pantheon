@@ -47,9 +47,9 @@ export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs
 
   return (
     <section className="connect">
-      <div className="tabs" role="tablist" aria-label="Client">
+      <div className="tabs" role="group" aria-label="Client">
         {(["opencode", "pi"] as Client[]).map((k) => (
-          <button key={k} role="tab" aria-selected={client === k} className={client === k ? "tab active" : "tab"} onClick={() => setClient(k)}>
+          <button key={k} aria-pressed={client === k} className={client === k ? "tab active" : "tab"} onClick={() => setClient(k)}>
             {k}
           </button>
         ))}

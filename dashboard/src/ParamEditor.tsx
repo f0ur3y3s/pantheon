@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useConfirmation } from "./Confirmation";
 import { api, ApiError } from "./api";
 import type { ConfigParams, ParamSpec, ParamValue } from "./contracts";
 
@@ -59,6 +60,7 @@ export function ParamEditor({
   onSaved: () => void;
   refreshKey: string; // changes when the machine's state/operation changes; re-read restart_required
 }) {
+  const { confirm, confirmation } = useConfirmation();
   const [params, setParams] = useState<ConfigParams | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +108,11 @@ export function ParamEditor({
       setError(update);
       return;
     }
+    if (!await confirm({
+      title: thenRestart ? `Restart model on ${machine}?` : `Save parameters for ${label}?`,
+      message: thenRestart ? "Your parameter changes will be saved, then the running model will stop and restart to apply them." : "These changes will replace the saved parameter overrides for this configuration. A running model keeps its current values until restarted.",
+      action: thenRestart ? "Save and restart" : "Save parameters",
+    })) return;
     setSaving(true);
     setError(null);
     try {
@@ -128,8 +135,9 @@ export function ParamEditor({
 
   return (
     <section className="params" aria-label={`Parameters for ${label}`}>
+      {confirmation}
       <div className="params-head">
-        <span className="label">Parameters</span>
+        <strong>{label}</strong>
         {!configId.startsWith("profile/") && <span className="sub model">{configId}</span>}
       </div>
       {params.schema.map((s) => {
@@ -186,7 +194,9 @@ export function ParamEditor({
           <button
             className="ghost"
             disabled={saving}
-            onClick={() => setDraft(Object.fromEntries(params.schema.map((s) => [s.key, ""])))}
+            onClick={async () => {
+              if (await confirm({ title: "Reset all parameter overrides?", message: `This clears the parameter edits for ${label} from the editor. Save afterward to replace the stored overrides with engine defaults.`, action: "Reset all" })) setDraft(Object.fromEntries(params.schema.map((s) => [s.key, ""])));
+            }}
           >
             Reset all
           </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { ConnectPanel } from "./ConnectPanel";
+import { useConfirmation } from "./Confirmation";
 import { ParamEditor } from "./ParamEditor";
 import type { LogLine, MachineView, ModelConfig, Operation } from "./contracts";
 
@@ -31,6 +32,7 @@ function Meter({ machine, label, used, total }: { machine: string; label: string
 }
 
 export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () => void }) {
+  const { confirm, confirmation } = useConfirmation();
   const st = m.status;
   const offline = st.state === "offline";
   const [configs, setConfigs] = useState<ModelConfig[] | null>(null);
@@ -39,9 +41,10 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   const [selected, setSelected] = useState<string>("");
   const [op, setOp] = useState<Operation | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
-  const [showConnect, setShowConnect] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
+  const [tab, setTab] = useState("overview");
+  const showLogs = tab === "logs";
+  const showConnect = tab === "connect";
+  const showEdit = tab === "params";
   const [showCreate, setShowCreate] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -50,6 +53,8 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   const loadClientConfig = useCallback(() => api.clientConfig(m.name), [m.name]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const logRef = useRef<HTMLPreElement>(null);
+  const followLogs = useRef(true);
+  const [logError, setLogError] = useState(false);
 
   // Load configs once the machine is reachable.
   useEffect(() => {
@@ -94,8 +99,8 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
     let alive = true;
     const load = () =>
       api.logs(m.name, 300).then(
-        (l) => alive && setLogs(l),
-        () => {},
+        (l) => { if (alive) { setLogs(l); setLogError(false); } },
+        () => { if (alive) setLogError(true); },
       );
     load();
     const t = setInterval(load, 2000);
@@ -106,6 +111,7 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   }, [showLogs, m.name]);
 
   useEffect(() => {
+    if (!followLogs.current) return;
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [logs]);
 
@@ -114,7 +120,12 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   const serving = st.state === "ready";
   const action = serving ? (selected && selected !== st.active_config ? "switch" : null) : "start";
 
-  async function submit(kind: "start" | "stop" | "switch", configId: string = selected) {
+  async function submit(kind: "start" | "stop" | "switch", configId: string = selected, confirmed = false) {
+    if (!confirmed && kind !== "start" && !await confirm({
+      title: `${kind === "stop" ? "Stop model" : "Switch model"} on ${m.name}?`,
+      message: kind === "stop" ? "The running model will stop and this machine will no longer serve requests." : `The running model will stop and ${configs?.find(c => c.id === configId)?.label ?? configId} will load in its place.`,
+      action: kind === "stop" ? "Stop model" : "Switch model",
+    })) return;
     setError(null);
     try {
       const o = await api.submit(m.name, kind, kind === "stop" ? undefined : configId);
@@ -136,7 +147,7 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
       setSelected(profile.id);
       setProfileName("");
       setShowCreate(false);
-      setShowEdit(true);
+      setTab("params");
     } catch (e) {
       setError(e instanceof ApiError ? e.body.message : String(e));
     } finally {
@@ -151,18 +162,20 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
   const r = st.resources;
 
   return (
-    <article className={`card state-${st.state}`} aria-busy={busy}>
-      <header className="card-head">
-        <div>
-          <h2>{m.name}</h2>
-          <p className="sub">
-            {m.capabilities ? `${m.capabilities.engine} ${m.capabilities.engine_version}` : st.engine}
-            {r?.gpu_name ? ` · ${r.gpu_name}` : ""}
-          </p>
-        </div>
-        <span className={`machine-state state-label-${st.state}`}><span className="state-dot" aria-hidden="true" />{st.state}</span>
-      </header>
-
+    <div className="machine-detail">
+      {confirmation}
+      <div className="tabs" role="tablist" aria-label="Machine details" onKeyDown={e => {
+        const tabs = ["overview", "params", "logs", "connect"];
+        const index = tabs.indexOf(tab);
+        const next = e.key === "ArrowRight" ? (index + 1) % 4 : e.key === "ArrowLeft" ? (index + 3) % 4 : e.key === "Home" ? 0 : e.key === "End" ? 3 : -1;
+        if (next < 0) return;
+        e.preventDefault(); setTab(tabs[next]);
+        e.currentTarget.querySelectorAll<HTMLButtonElement>("button")[next].focus();
+      }}>
+        {(["overview", "params", "logs", "connect"] as const).map(t => <button key={t} id={`tab-${m.name}-${t}`} className="tab" role="tab" aria-selected={tab === t} aria-controls={`panel-${m.name}`} tabIndex={tab === t ? 0 : -1} onClick={() => setTab(t)}>{t === "params" ? "Parameters" : t[0].toUpperCase() + t.slice(1)}</button>)}
+      </div>
+      <div className="tabpanel" id={`panel-${m.name}`} role="tabpanel" aria-labelledby={`tab-${m.name}-${tab}`}>
+      {tab === "overview" && <>
       <section className="serving">
         {serving ? (
           <>
@@ -206,7 +219,8 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
 
       {!offline && (
         <footer className="controls">
-          <select
+          <label htmlFor={`config-${m.name}`}>Configuration</label>
+          <select id={`config-${m.name}`}
             aria-label={`Configuration for ${m.name}`}
             value={configs ? selected : ""}
             disabled={busy || !configs}
@@ -226,7 +240,7 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
           <div className="buttons">
             {action && (
               <button className="primary" disabled={busy || !selected} onClick={() => submit(action)}>
-                {action === "switch" ? "Switch" : "Start"}
+                {busy ? "In progress…" : action === "switch" ? "Switch" : "Start"}
               </button>
             )}
             {serving && (
@@ -234,19 +248,8 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
                 Stop
               </button>
             )}
-            <button className="ghost" aria-expanded={showEdit} disabled={!selected} onClick={() => setShowEdit((v) => !v)}>
-              Edit
-            </button>
-            <button className="ghost" aria-expanded={showCreate} disabled={!selected} onClick={() => setShowCreate((v) => !v)}>
+            <button className="ghost" aria-expanded={showCreate} disabled={busy || !selected} onClick={() => setShowCreate((v) => !v)}>
               New profile
-            </button>
-            {serving && (
-              <button className="ghost" aria-expanded={showConnect} onClick={() => setShowConnect((v) => !v)}>
-                Direct connect
-              </button>
-            )}
-            <button className="ghost" aria-expanded={showLogs} onClick={() => setShowLogs((v) => !v)}>
-              Logs
             </button>
           </div>
           {showCreate && (
@@ -261,10 +264,13 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
               </div>
             </form>
           )}
-          {error && <p className="note bad">{error}</p>}
         </footer>
       )}
 
+      </>}
+      {error && <p className="note bad" role="alert">{error}</p>}
+      {showEdit && offline && <p className="note">Parameters are unavailable while this machine is offline.</p>}
+      {showEdit && !offline && !selected && <p className="note">Select a configuration in Overview to edit its parameters.</p>}
       {showEdit && !offline && selected && (
         <ParamEditor
           machine={m.name}
@@ -272,12 +278,13 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
           label={configs?.find((c) => c.id === selected)?.label ?? selected}
           canRestart={serving && selected === st.active_config}
           busy={busy}
-          onRestart={() => submit("switch", selected)}
+          onRestart={() => submit("switch", selected, true)}
           onSaved={() => setConfigs(null)}
           refreshKey={`${st.state}|${st.current_operation ?? ""}|${st.active_config ?? ""}`}
         />
       )}
 
+      {showConnect && !serving && <p className="note">Start a model to get a direct connection configuration.</p>}
       {showConnect && serving && (
         <ConnectPanel
           key={servingKey}
@@ -287,12 +294,13 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
       )}
 
       {showLogs && (
-        <pre className="logs" ref={logRef}>
+        <div>{logError && <p className="note bad" role="alert">Logs could not be loaded. Retrying…</p>}<pre className="logs" ref={logRef} onScroll={e => { const el = e.currentTarget; followLogs.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
           {logs.length === 0
             ? "No log lines yet."
             : logs.map((l) => `${new Date(l.ts * 1000).toLocaleTimeString()} ${l.source.padEnd(6)} ${l.text}`).join("\n")}
-        </pre>
+        </pre></div>
       )}
-    </article>
+      </div>
+    </div>
   );
 }

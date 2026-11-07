@@ -9,3 +9,4 @@ state/
 .env
 local/
 dashboard/*.tsbuildinfo
+.impeccable/
