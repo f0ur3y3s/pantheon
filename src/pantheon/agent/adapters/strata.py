@@ -90,7 +90,13 @@ class StrataAdapter:
 
     @property
     def local_url(self) -> str:
-        return f"http://127.0.0.1:{self.s.port}"
+        # Reach the server where it actually listens: a specific bind address (e.g. a LAN IP) does not answer on loopback.
+        host = self.s.bind_host
+        if host in ("", "0.0.0.0", "::", "[::]"):
+            host = "127.0.0.1"
+        elif ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{self.s.port}"
 
     def _note(self, text: str) -> None:
         self._log.append(LogLine(ts=time.time(), source="agent", text=text))
