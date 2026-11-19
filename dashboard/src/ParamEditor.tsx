@@ -143,6 +143,7 @@ export function ParamEditor({
       {params.schema.map((s) => {
         const id = `p-${machine}-${configId}-${s.key}`;
         const overridden = (draft[s.key] ?? "") !== "";
+        const running = params.running?.[s.key];
         return (
           <div className="param" key={s.key}>
             <label htmlFor={id}>
@@ -172,6 +173,7 @@ export function ParamEditor({
               {s.help}
               {s.min != null && s.max != null ? ` Range ${s.min.toLocaleString()}–${s.max.toLocaleString()}.` : ""}
             </span>
+            {running != null && <span className="sub">Currently running at {running.toLocaleString()}</span>}
           </div>
         );
       })}

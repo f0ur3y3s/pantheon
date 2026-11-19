@@ -130,6 +130,7 @@ export interface ConfigParams {
   base: Record<string, ParamValue>;
   overrides: Record<string, ParamValue>;
   values: Record<string, ParamValue>;
+  running?: Record<string, number>;
   active: boolean;
   restart_required: boolean;
 }

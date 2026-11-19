@@ -227,7 +227,8 @@ class MachineAgent:
             restart = self._started_values != values
         return ConfigParams(config_id=config_id, schema=self.adapter.param_schema(base),
                             base=self.adapter.base_params(base), overrides=self.params.get(config_id),
-                            values=values, active=active, restart_required=restart)
+                            values=values, running=self._probe.running_params if active else {},
+                            active=active, restart_required=restart)
 
     async def set_params(self, config_id: str, update: ParamUpdate) -> ConfigParams:
         base = await self._base_config(config_id)

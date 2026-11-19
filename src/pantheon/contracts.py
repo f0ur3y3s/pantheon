@@ -94,6 +94,7 @@ class ConfigParams(BaseModel):
     base: dict[str, Any]  # values from the engine's own config (LM Studio defaults, Strata preset, ...)
     overrides: dict[str, Any]  # values set from pantheon
     values: dict[str, Any]  # effective = base + overrides
+    running: dict[str, int] = Field(default_factory=dict)  # values reported for the active instance
     active: bool = False  # this config is currently serving
     restart_required: bool = False  # active, and the serving model was started with different values
 

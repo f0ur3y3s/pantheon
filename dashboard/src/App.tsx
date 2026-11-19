@@ -41,7 +41,7 @@ export function App() {
   useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
-    panel.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    panel.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
     if (compact) { page.current?.setAttribute("inert", ""); top.current?.setAttribute("inert", ""); document.body.style.overflow = "hidden"; }
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -52,14 +52,16 @@ export function App() {
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
     };
     document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("keydown", key); page.current?.removeAttribute("inert"); top.current?.removeAttribute("inert"); document.body.style.overflow = previousOverflow; opener.current?.focus(); };
+    return () => { document.removeEventListener("keydown", key); page.current?.removeAttribute("inert"); top.current?.removeAttribute("inert"); document.body.style.overflow = previousOverflow; opener.current?.focus({ preventScroll: true }); };
   }, [open, compact, close]);
   const refresh = useCallback(async () => {
-    setRefreshing(true);
     try { setMachines(await api.machines()); setError(null); }
     catch (e) { if (e instanceof ApiError && e.status === 401) { setToken(""); setAuthError("That token was not accepted."); setNeedsLogin(true); } else setError(e instanceof Error ? e.message : String(e)); }
-    finally { setRefreshing(false); }
   }, []);
+  const manualRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await refresh(); } finally { setRefreshing(false); }
+  }, [refresh]);
   useEffect(() => { api.authInfo().then(({ required }) => { setAuthRequired(required); setNeedsLogin(required && !getToken()); }, () => setAuthRequired(true)); }, []);
   useEffect(() => { if (needsLogin || authRequired === null) return; refresh(); const t = setInterval(refresh, 2000); return () => clearInterval(t); }, [needsLogin, authRequired, refresh]);
   const reachable = machines?.filter(m => m.status.state !== "offline").map(m => m.name).join("|") ?? "";
@@ -81,15 +83,15 @@ export function App() {
     <header className="top" ref={top}>
       <div className="brand"><img className="brand-mark" src="/pantheon-mark.svg" alt=""/>Pantheon</div><span className="crumb" aria-hidden="true">/</span><span className="crumb">Machines</span>
       <div className="endpoint"><code className="mono">{endpoint}</code><CopyButton text={endpoint} label="Copy gateway endpoint"/></div><span className="spacer"/>
-      <button className="iconbtn" aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}><Icon name="theme"/></button>
+      <button className="iconbtn" aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}><Icon name={theme === "dark" ? "theme" : "moon"}/></button>
       {authRequired && <button className="ghost small" onClick={async () => { if (await confirm({ title: "Sign out?", message: "You will need your admin token to sign in again. Any unsaved parameter edits will be discarded.", action: "Sign out" })) { close(); setToken(""); setNeedsLogin(true); } }}>Sign out</button>}
     </header>
     <main className={`page ${open ? "with-drawer" : ""}`}>
       <div ref={page} className="console-main">
-        <div className="head"><div><h1>Machines</h1></div><button className="small" disabled={refreshing} onClick={refresh}><Icon name="refresh"/>Refresh</button></div>
-        {error && <p className="note bad gateway-error" role="alert">{error} <button className="small" onClick={refresh}>Retry</button></p>}
-        <dl className="strip"><div><dt>Serving</dt><dd>{machines ? serving.length : "–"}<small>of {list.length} machines</small></dd></div><div><dt>Models routed</dt><dd>{machines ? routes.length : "–"}<small>at one endpoint</small></dd></div><div><dt>In flight</dt><dd>{machines ? list.reduce((n,m) => n + m.active_requests, 0) : "–"}<small>requests</small></dd></div><div><dt>Offline</dt><dd>{machines ? list.filter(m => m.status.state === "offline").length : "–"}<small>{list.filter(m => m.status.state === "offline").length === 1 ? "machine" : "machines"}</small></dd></div></dl>
-        <div className="tablewrap"><table aria-label="Machines"><thead><tr><th>Machine</th><th>Status</th><th>Model</th><th>Memory</th><th className="c-req">Requests</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
+        <div className="head"><div><h1>Machines</h1></div><button className="small" disabled={refreshing} aria-busy={refreshing} onClick={manualRefresh}><Icon name="refresh"/>Refresh</button></div>
+        {error && <p className="note bad gateway-error" role="alert">{error} <button className="small" onClick={manualRefresh}>Retry</button></p>}
+        <dl className="strip"><div><dt>Serving</dt><dd>{machines ? serving.length : "–"}<small>of {list.length} machines</small></dd></div><div><dt>Models routed</dt><dd>{machines ? routes.length : "–"}<small>at one endpoint</small></dd></div><div><dt>Gateway in flight</dt><dd>{machines ? list.reduce((n,m) => n + m.active_requests, 0) : "–"}<small>requests</small></dd></div><div><dt>Offline</dt><dd>{machines ? list.filter(m => m.status.state === "offline").length : "–"}<small>{list.filter(m => m.status.state === "offline").length === 1 ? "machine" : "machines"}</small></dd></div></dl>
+        <div className="tablewrap"><table aria-label="Machines"><thead><tr><th>Machine</th><th>Status</th><th>Model</th><th>Memory</th><th className="c-req" title="In-flight requests through the gateway">Gateway requests</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
           {list.map(m => { const busy = ["loading", "draining", "stopping"].includes(m.status.state); const operation = operations.find(o => o.machine === m.name && o.id === m.status.current_operation); return <tr key={m.name} className={m.status.state} aria-selected={selected === m.name} onClick={() => choose(m.name)}>
             <td className="c-machine"><button className="machine-link" onClick={e => { e.stopPropagation(); choose(m.name); }} aria-label={`Open ${m.name}`} aria-expanded={selected === m.name}>{m.name}</button><div className="machine-sub clip" title={`${m.capabilities?.engine ?? m.status.engine} ${m.capabilities?.engine_version ?? ""} · ${m.status.resources?.gpu_name ?? ""}`}>{m.capabilities ? `${m.capabilities.engine} ${m.capabilities.engine_version}` : m.status.engine}{m.status.resources?.gpu_name ? ` · ${m.status.resources.gpu_name}` : ""}</div></td>
             <td className="c-status"><Status m={m}/></td><td className="c-model"><span className={`model clip ${m.status.state === "offline" || m.status.state === "failed" ? "bad" : ""}`} title={m.status.served_models.join(", ") || m.status.message || "No model serving"}>{m.status.served_models.join(", ") || m.status.message || "No model serving"}</span>{busy && <div className="row-operation"><div className="op-step">{operation?.step ?? "Operation in progress"}</div>{operation && <div className="bar" role="progressbar" aria-label={`${m.name} operation`} aria-valuenow={Math.round(operation.progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${operation.progress * 100}%` }}/></div>}</div>}</td>

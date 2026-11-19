@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 from pantheon.agent.adapters.lmstudio import LMProfile, LMStudioAdapter, LMStudioSettings
@@ -69,10 +70,15 @@ async def test_start_parses_progress_then_switch_and_stop(lms_state):
     op = await wait_op(agent, op.id)
     assert op.status == OperationStatus.SUCCEEDED, op.error
     assert [m["identifier"] for m in json.loads(lms_state.read_text())["loaded"]] == ["prism-ml/bonsai-27b"]
+    params = await agent.get_params("prism-ml/bonsai-27b")
+    assert params.running == {"context": 4096, "parallel": 4}
+    assert params.values["context"] is None and params.overrides == {}
+    assert (await agent.get_params("qwen36")).running == {}
 
     op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id)
     assert op.status == OperationStatus.SUCCEEDED
     assert (await agent.status()).state == MachineState.IDLE
+    assert (await agent.get_params("prism-ml/bonsai-27b")).running == {}
     assert json.loads(lms_state.read_text())["loaded"] == []
     logs = await agent.logs(100)
     assert any("Model loaded successfully" in l.text for l in logs)
@@ -103,6 +109,28 @@ async def test_reconcile_maps_loaded_instance_and_flags_unknown(lms_state):
     st = await agent.status()
     assert st.state == MachineState.READY and st.active_config is None
     assert "match no saved config" in st.message
+
+
+async def test_reconcile_reads_native_load_settings_when_cli_omits_them(monkeypatch):
+    agent, adapter = make()
+    instance = {"type": "llm", "modelKey": "qwen/qwen3.6-35b-a3b", "identifier": "qwen36"}
+
+    async def lms_json(*args):
+        return {("server", "status"): {"running": True}, ("ps",): [instance], ("ls",): [instance]}[args]
+
+    async def get(client, url):
+        assert url.path == "/api/v1/models"
+        return httpx.Response(200, request=httpx.Request("GET", url), json={"models": [{"loaded_instances": [
+            {"id": "other", "config": {"context_length": 4096}},
+            {"id": "qwen36", "config": {"context_length": 8192, "parallel": 1}},
+        ]}]})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", get)
+    monkeypatch.setattr(adapter, "_lms_json", lms_json)
+    await agent.reconcile()
+    params = await agent.get_params("qwen36")
+    assert params.running == {"context": 8192, "parallel": 1}
+    assert params.values["context"] == 131072 and params.overrides == {}
 
 
 async def test_server_down_is_idle_and_start_brings_it_up(lms_state):

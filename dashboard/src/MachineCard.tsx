@@ -182,7 +182,7 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
             <div className="model">{st.served_models.join(", ") || "–"}</div>
             <div className="sub">
               {activeLabel}
-              {m.active_requests > 0 ? ` · ${m.active_requests} active request${m.active_requests > 1 ? "s" : ""}` : ""}
+              {m.active_requests > 0 ? ` · ${m.active_requests} gateway request${m.active_requests > 1 ? "s" : ""}` : ""}
             </div>
           </>
         ) : null}

@@ -1,26 +1,9 @@
 import { useEffect, useState } from "react";
+import { CopyButton } from "./ui";
 import { ApiError } from "./api";
 import type { ClientConfigs } from "./contracts";
 
 type Client = "opencode" | "pi";
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setState("done");
-    } catch {
-      setState("failed");
-    }
-    setTimeout(() => setState("idle"), 1500);
-  }
-  return (
-    <button className="ghost small" onClick={copy} aria-label={label}>
-      {state === "done" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
-    </button>
-  );
-}
 
 export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs>; note?: string }) {
   const [data, setData] = useState<ClientConfigs | null>(null);
@@ -57,7 +40,7 @@ export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs
       {note && <p className="note">{note}</p>}
       <div className="snippet-head">
         <span className="model">{c.path}</span>
-        <CopyButton text={json} label={`Copy ${client} config`} />
+        <CopyButton variant="text" text={json} label={`Copy ${client} config`} />
       </div>
       <pre className="snippet">{json}</pre>
       <p className="sub">{c.merge_hint}</p>
@@ -68,7 +51,7 @@ export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs
       )}
       <div className="snippet-head">
         <code className="model">{c.usage}</code>
-        <CopyButton text={c.usage} label={`Copy ${client} command`} />
+        <CopyButton variant="text" text={c.usage} label={`Copy ${client} command`} />
       </div>
     </section>
   );

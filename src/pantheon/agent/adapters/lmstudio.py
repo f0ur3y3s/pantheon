@@ -20,7 +20,7 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlparse
 
 import httpx
@@ -90,6 +90,30 @@ class LMStudioAdapter:
                 return c
         return None
 
+    async def _running_params(self, inst: dict) -> dict[str, int]:
+        fields = {"context": "contextLength", "parallel": "parallel"}
+        params = {key: inst[field] for key, field in fields.items()
+                  if type(inst.get(field)) is int and inst[field] > 0}
+        if len(params) == len(fields):
+            return params
+
+        # Some CLI versions omit load settings from JSON. The native API reports them per instance.
+        url = httpx.URL(self.s.engine_url).copy_with(path="/api/v1/models")
+        try:
+            async with httpx.AsyncClient(timeout=2.0, trust_env=False) as http:
+                response = await http.get(url)
+                response.raise_for_status()
+                models = response.json()["models"]
+                config = next((loaded["config"] for model in models for loaded in model["loaded_instances"]
+                               if loaded.get("id") == inst["identifier"]), {})
+                for key, field in {"context": "context_length", "parallel": "parallel"}.items():
+                    value = config.get(field)
+                    if type(value) is int and value > 0:
+                        params.setdefault(key, value)
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+            pass  # Availability of runtime metadata does not affect whether the model is serving.
+        return params
+
     # ---- Adapter protocol ------------------------------------------------
 
     async def capabilities(self) -> Capabilities:
@@ -131,7 +155,8 @@ class LMStudioAdapter:
         if not loaded:
             return EngineProbe(serving=False)
         configs = await self.list_configs()
-        matched = next((c for inst in loaded if (c := self._match(inst, configs))), None)
+        instance, matched = next(((inst, c) for inst in loaded if (c := self._match(inst, configs))),
+                                 (loaded[0], None))
         msg = None
         if len(loaded) > 1:
             msg = f"{len(loaded)} LLMs loaded; stop/switch unloads all of them"
@@ -144,6 +169,7 @@ class LMStudioAdapter:
             engine_url=self.s.engine_url,
             owned=True,  # LM Studio is shared state; anything loaded is ours to manage
             message=msg,
+            running_params=await self._running_params(instance),
         )
 
     async def start(self, config: ModelConfig, report: ProgressFn) -> EngineProbe:
@@ -195,8 +221,7 @@ class LMStudioAdapter:
         probe = await self.probe()
         if config.model not in probe.served_models:
             raise EngineError(f"{config.model} not listed as loaded after a successful load")
-        return EngineProbe(serving=True, config_id=config.id, served_models=probe.served_models,
-                           engine_url=self.s.engine_url, owned=True, message=probe.message)
+        return replace(probe, config_id=config.id)
 
     async def _readiness(self, identifier: str) -> None:
         if self.s.readiness == "none":

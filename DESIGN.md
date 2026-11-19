@@ -153,7 +153,7 @@ Between 1081px and 1280px the selected-machine column narrows to 380px with a 20
 
 ## Elevation & Depth
 
-Most surfaces are flat, separated by single-pixel borders and tonal changes. The selected-machine panel uses the theme-specific shadow recorded in the sidecar. The sticky bar mixes the page background at 88% with transparency and applies a 10px backdrop blur. A translucent black scrim separates the bottom sheet. Small soft halos emphasize status dots rather than general container elevation.
+Most surfaces are flat, separated by single-pixel borders and tonal changes. The selected-machine panel uses the theme-specific shadow recorded in the sidecar. The sticky bar mixes the page background at 88% with transparency and applies a 10px backdrop blur. A translucent black scrim separates the bottom sheet. Solid status dots carry semantic state without halos.
 
 ## Shapes
 
@@ -201,3 +201,5 @@ Observed motion uses 150ms control/row transitions and a 350ms panel entrance wi
 Memory telemetry in the fleet table shows separate RAM and VRAM lines whenever reported, each with used/total capacity and a percentage meter. Missing telemetry is not substituted with a different memory type.
 
 Client selectors group options at the left edge at every width. Actions that stop, switch, or restart a model, save parameter replacements, reset overrides, or sign out require a themed modal confirmation. Cancel receives initial focus; Escape cancels without closing the parent panel; focus returns to the invoking control.
+
+Use Lucide React for interface icons at 16px with a 1.5px stroke; retain the existing Pantheon brand asset. Shared copy controls announce “Copied to clipboard!” in a visible, polite live toast for three seconds. Clipboard errors explain HTTPS or manual-copy recovery. Toasts use neutral raised surfaces, semantic status icons, and safe-area spacing above the bottom edge.

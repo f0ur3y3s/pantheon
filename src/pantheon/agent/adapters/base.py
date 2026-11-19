@@ -40,6 +40,7 @@ class EngineProbe:
     engine_url: str | None = None  # OpenAI-compatible base, ending in /v1
     owned: bool = True  # False if the running engine was not started by this agent/adapter
     message: str | None = None
+    running_params: dict[str, int] = field(default_factory=dict)
 
 
 class Adapter(Protocol):
