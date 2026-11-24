@@ -73,6 +73,8 @@ class StrataSettings:
 
 
 class StrataAdapter:
+    check_version = True  # warn when the control VERSION is not in SUPPORTED_VERSIONS
+
     def __init__(self, settings: StrataSettings):
         self.s = settings
         self.state = Path(settings.state_dir).expanduser()
@@ -256,7 +258,7 @@ class StrataAdapter:
         return EngineProbe(serving=False)
 
     async def start(self, config: ModelConfig, report: ProgressFn) -> EngineProbe:
-        if (v := self.version()) not in SUPPORTED_VERSIONS:
+        if self.check_version and (v := self.version()) not in SUPPORTED_VERSIONS:
             self._note(f"warning: strata control {v} is not a verified version ({sorted(SUPPORTED_VERSIONS)})")
         if await self._health(timeout=1.5):
             raise EngineError(f"port {self.s.port} already has a strata server; stop it first")

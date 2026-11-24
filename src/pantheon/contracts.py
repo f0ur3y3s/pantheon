@@ -27,6 +27,7 @@ class MachineState(StrEnum):
 
 class EngineKind(StrEnum):
     STRATA = "strata"
+    POLYSTRATA = "polystrata"
     LLAMA_CPP = "llama.cpp"
     LMSTUDIO = "lmstudio"
     SIMULATED = "simulated"

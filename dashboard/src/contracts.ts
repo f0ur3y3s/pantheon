@@ -1,7 +1,7 @@
 // Mirrors src/pantheon/contracts.py — keep in sync (the Python file is the source of truth).
 
 export type MachineState = "offline" | "idle" | "loading" | "ready" | "draining" | "stopping" | "failed";
-export type EngineKind = "strata" | "llama.cpp" | "lmstudio" | "simulated";
+export type EngineKind = "strata" | "polystrata" | "llama.cpp" | "lmstudio" | "simulated";
 export type OperationKind = "start" | "stop" | "switch";
 export type OperationStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 

@@ -24,6 +24,7 @@ LLM clients ──► gateway (Proxmox LXC) ──► engine on each machine (St
 
 - **The central service runs in a dedicated LXC** on the least-loaded Proxmox node.
 - **The MBP uses an LM Studio adapter** (`lms load/unload/ps/ls`). It is not migrated to llama-server.
+- **PolyStrata (2026-11-24)** is a Strata fork run from a source checkout. `kind = "polystrata"` reuses the Strata adapter: `control_dir` is the checkout's `terminal/`, the server runs as `.venv/bin/python serve/server.py`, presets default to its `strata-*.json` files (id without the `strata-` prefix), the version is the git commit, and the default port is 8081.
 - **Multiple Strata versions are supported.** The Strata adapter detects the version (`strata --version`) and gates behavior on it. Currently required: 0.2.8 (build 0.1.54, Pythia) and 0.2.11 (build 0.1.57, Zeus).
 - **Pythia and Zeus are busy with experiments.** Nothing touches their engines until the owner says so.
 - **Stack:** Python 3.12+ with FastAPI and httpx for the agent and gateway; React, TypeScript, and Vite for the dashboard.

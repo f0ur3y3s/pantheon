@@ -85,15 +85,21 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
             settings.lms_command = [os.path.expanduser(c) for c in (cmd if isinstance(cmd, list) else [cmd])]
         agent = MachineAgent(cfg.name, LMStudioAdapter(settings), EngineKind.LMSTUDIO, params, profiles)
         return build_agent_app(agent, cfg.token)
-    if kind == "strata":
+    if kind in ("strata", "polystrata"):
+        from pantheon.agent.adapters.polystrata import PolyStrataAdapter
         from pantheon.agent.adapters.strata import StrataAdapter, StrataSettings
 
         known = set(StrataSettings.__dataclass_fields__)
         unknown = set(cfg.adapter) - known - {"kind"}
         if unknown:
-            raise ValueError(f"unknown strata adapter settings: {sorted(unknown)}")
+            raise ValueError(f"unknown {kind} adapter settings: {sorted(unknown)}")
         a = {k: v for k, v in cfg.adapter.items() if k != "kind"}
         a.setdefault("state_dir", str((state or Path("~/.local/state/pantheon").expanduser()) / "strata"))
-        agent = MachineAgent(cfg.name, StrataAdapter(StrataSettings(**a)), EngineKind.STRATA, params, profiles)
+        if kind == "polystrata":
+            a.setdefault("port", 8081)
+            adapter, engine = PolyStrataAdapter(StrataSettings(**a)), EngineKind.POLYSTRATA
+        else:
+            adapter, engine = StrataAdapter(StrataSettings(**a)), EngineKind.STRATA
+        agent = MachineAgent(cfg.name, adapter, engine, params, profiles)
         return build_agent_app(agent, cfg.token)
     raise ValueError(f"unknown adapter kind {kind!r}")

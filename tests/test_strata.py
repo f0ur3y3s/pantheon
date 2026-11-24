@@ -204,3 +204,30 @@ async def test_restarted_agent_still_drains_the_server_it_launched(strata_env, m
     assert (await wait_op(agent2, op.id, timeout=30)).status == OperationStatus.SUCCEEDED
     logs = " ".join(l.text for l in await agent2.logs(200))
     assert "cannot drain" not in logs and "stop signal failed" not in logs
+
+
+async def test_polystrata_checkout_presets_and_start(tmp_path, monkeypatch):
+    from pantheon.agent.adapters.polystrata import PolyStrataAdapter
+
+    monkeypatch.setenv("FAKE_STRATA_LOAD", "0.2")
+    checkout = tmp_path / "terminal"
+    (checkout / ".venv" / "bin").mkdir(parents=True)
+    (checkout / "strata-inkling-q4.json").write_text(json.dumps({
+        "exe": "engine-poly/strata-poly", "model_name": "inkling-2-mini-q4",
+        "args": ["--model", "/m.gguf", "--max-context", "32768"]}))
+    (checkout / "other.json").write_text("{}")  # not a strata-*.json preset
+    port = free_port()
+    a = PolyStrataAdapter(StrataSettings(control_dir=str(checkout), engine_url=f"http://127.0.0.1:{port}/v1",
+                                         state_dir=str(tmp_path / "state"), server_command=[sys.executable, FAKE],
+                                         bind_host="127.0.0.1", port=port, expected_load_seconds=1, exit_grace=1.0))
+    configs = await a.list_configs()
+    assert [(c.id, c.model, c.context, c.engine) for c in configs] == [
+        ("inkling-q4", "inkling-2-mini-q4", 32768, EngineKind.POLYSTRATA)]
+    caps = await a.capabilities()
+    assert caps.engine == EngineKind.POLYSTRATA and caps.extra["supported_version"]
+    agent = MachineAgent("pythia", a, EngineKind.POLYSTRATA)
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="inkling-q4"))).id, timeout=20)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
+    assert (await agent.status()).served_models == ["inkling-2-mini-q4"]
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=30)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
