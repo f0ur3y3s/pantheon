@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-DEFAULT_OUTPUT_TOKENS = 8192
+DEFAULT_OUTPUT_TOKENS = 8192  # when the context is unknown
+MAX_OUTPUT_TOKENS = 32768  # thinking models need room: a quarter of the context, up to this
 
 
 @dataclass
@@ -26,7 +27,7 @@ class ClientModel:
 def _output_limit(context: int | None) -> int:
     if not context:
         return DEFAULT_OUTPUT_TOKENS
-    return max(1024, min(DEFAULT_OUTPUT_TOKENS, context // 4))
+    return max(1024, min(MAX_OUTPUT_TOKENS, context // 4))
 
 
 def opencode_config(provider_id: str, label: str, base_url: str, models: list[ClientModel],

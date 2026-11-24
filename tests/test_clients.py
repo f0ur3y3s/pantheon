@@ -16,7 +16,7 @@ def test_opencode_and_pi_shapes_match_installed_client_formats():
     assert prov["npm"] == "@ai-sdk/openai-compatible"
     assert prov["options"] == {"baseURL": "http://192.0.2.12:8080/v1"}  # no apiKey when unauthenticated
     m = prov["models"]["qwen36"]
-    assert m["limit"] == {"context": 131072, "input": 131072 - 8192, "output": 8192}
+    assert m["limit"] == {"context": 131072, "input": 131072 - 32768, "output": 32768}
     assert m["tool_call"] is True
     assert oc["model"] == "mbp/qwen36"
 
@@ -24,7 +24,7 @@ def test_opencode_and_pi_shapes_match_installed_client_formats():
     assert pi["api"] == "openai-completions" and pi["baseUrl"] == "http://192.0.2.12:8080/v1"
     assert pi["apiKey"] == "none"  # pi hides models without a resolvable key
     assert pi["models"][0] == {"id": "qwen36", "name": "Qwen3.6", "reasoning": True, "input": ["text"],
-                               "contextWindow": 131072, "maxTokens": 8192,
+                               "contextWindow": 131072, "maxTokens": 32768,
                                "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}}
 
 
