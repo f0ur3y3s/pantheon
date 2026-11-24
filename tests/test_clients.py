@@ -28,6 +28,33 @@ def test_opencode_and_pi_shapes_match_installed_client_formats():
                                "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}}
 
 
+def test_omp_is_the_pi_shape_as_yaml():
+    out = client_configs("pantheon", "Pantheon", "http://gw/v1",
+                         [ClientModel(id="pythia/inkling-2-mini", name="inkling (pythia)", context=131072)], None)
+    omp = out["omp"]
+    assert omp["path"] == "~/.omp/agent/models.yml"
+    assert omp["config"] == out["pi"]["config"]
+    assert omp["text"] == """providers:
+  pantheon:
+    baseUrl: "http://gw/v1"
+    api: "openai-completions"
+    apiKey: "none"
+    models:
+    - id: "pythia/inkling-2-mini"
+      name: "inkling (pythia)"
+      reasoning: true
+      input:
+      - "text"
+      contextWindow: 131072
+      maxTokens: 32768
+      cost:
+        input: 0
+        output: 0
+        cacheRead: 0
+        cacheWrite: 0
+"""
+
+
 def test_keyed_endpoint_uses_env_references_never_literal_keys():
     out = client_configs("pantheon", "Pantheon", "http://gw/v1", [ClientModel(id="m", name="m", context=4096)], "PANTHEON_API_KEY")
     assert out["opencode"]["config"]["provider"]["pantheon"]["options"]["apiKey"] == "{env:PANTHEON_API_KEY}"

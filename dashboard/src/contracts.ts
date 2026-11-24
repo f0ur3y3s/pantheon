@@ -96,6 +96,7 @@ export interface ClientSnippet {
   path: string;
   merge_hint: string;
   config: Record<string, unknown>;
+  text?: string; // pre-rendered snippet for non-JSON formats (omp's YAML); shown instead of `config`
   usage: string;
 }
 
@@ -107,6 +108,7 @@ export interface ClientConfigs {
   direct: boolean;
   opencode: ClientSnippet;
   pi: ClientSnippet;
+  omp: ClientSnippet;
 }
 
 export type ParamType = "int" | "float" | "bool" | "enum";

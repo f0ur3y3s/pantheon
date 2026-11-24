@@ -6,10 +6,13 @@ Formats are matched to the client versions in use (checked 2026-11-06 against wo
 - pi 1.5.0: `~/.pi/agent/models.json`, `providers.<id>` with `baseUrl`, `api: "openai-completions"`,
   and a `models` array. pi hides models it can't resolve credentials for, so a dummy key is used when
   the endpoint has no auth.
+- omp (oh-my-pi, a pi fork): the same provider shape as pi, but as YAML in `~/.omp/agent/models.yml`
+  (checked 2026-11-24 against a working file). Sent pre-rendered as `text`.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 DEFAULT_OUTPUT_TOKENS = 8192  # when the context is unknown
@@ -75,6 +78,43 @@ def pi_config(provider_id: str, base_url: str, models: list[ClientModel], api_ke
     }
 
 
+def to_yaml(value, indent: int = 0) -> str:
+    """Block-style YAML for plain dicts/lists/scalars. Strings are JSON-quoted, which YAML reads as-is."""
+    pad = "  " * indent
+    if isinstance(value, dict):
+        lines = []
+        for k, v in value.items():
+            if isinstance(v, (dict, list)) and v:
+                # list items sit level with their key, as in omp's own models.yml
+                lines.append(f"{pad}{k}:\n{to_yaml(v, indent if isinstance(v, list) else indent + 1)}")
+            else:
+                lines.append(f"{pad}{k}: {_yaml_scalar(v)}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, dict) and item:
+                first, *rest = to_yaml(item, indent + 1).split("\n")
+                lines.append(f"{pad}- {first.lstrip()}")
+                lines += rest
+            else:
+                lines.append(f"{pad}- {_yaml_scalar(item)}")
+        return "\n".join(lines)
+    return pad + _yaml_scalar(value)
+
+
+def _yaml_scalar(v) -> str:
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, (dict, list)):
+        return "{}" if isinstance(v, dict) else "[]"
+    return json.dumps(str(v))
+
+
 def client_configs(provider_id: str, label: str, base_url: str, models: list[ClientModel],
                    api_key_env: str | None) -> dict:
     """Everything the dashboard's Connect section shows for one endpoint."""
@@ -95,5 +135,12 @@ def client_configs(provider_id: str, label: str, base_url: str, models: list[Cli
             "merge_hint": f'merge "providers.{provider_id}" into your existing file; /model reloads it',
             "config": pi_config(provider_id, base_url, models, api_key_env),
             "usage": f"pi --model {provider_id}/{first}",
+        },
+        "omp": {
+            "path": "~/.omp/agent/models.yml",
+            "merge_hint": f'merge "providers.{provider_id}" into your existing file (or a profile\'s agent/models.yml), then restart omp',
+            "config": (omp := pi_config(provider_id, base_url, models, api_key_env)),
+            "text": to_yaml(omp) + "\n",
+            "usage": f"omp --model {provider_id}/{first}",
         },
     }

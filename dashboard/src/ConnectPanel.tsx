@@ -3,7 +3,7 @@ import { CopyButton } from "./ui";
 import { ApiError } from "./api";
 import type { ClientConfigs } from "./contracts";
 
-type Client = "opencode" | "pi";
+type Client = "opencode" | "pi" | "omp";
 
 export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs>; note?: string }) {
   const [data, setData] = useState<ClientConfigs | null>(null);
@@ -26,12 +26,12 @@ export function ConnectPanel({ load, note }: { load: () => Promise<ClientConfigs
   if (data.models.length === 0) return <p className="sub">Nothing is serving yet, so there is nothing to connect to.</p>;
 
   const c = data[client];
-  const json = JSON.stringify(c.config, null, 2);
+  const json = c.text ?? JSON.stringify(c.config, null, 2); // omp is YAML, pre-rendered by the gateway
 
   return (
     <section className="connect">
       <div className="tabs" role="group" aria-label="Client">
-        {(["opencode", "pi"] as Client[]).map((k) => (
+        {(["opencode", "pi", "omp"] as Client[]).map((k) => (
           <button key={k} aria-pressed={client === k} className={client === k ? "tab active" : "tab"} onClick={() => setClient(k)}>
             {k}
           </button>
