@@ -35,7 +35,8 @@ class MultiAdapter:
         first = caps[0][1]
         return first.model_copy(update={
             "engine": first.engine,
-            "engine_version": " + ".join(f"{c.engine.value} {c.engine_version}" for _, c in caps),
+            # shown after the engine kind ("strata 0.1.54 + polystrata git abc"), so the first kind is not repeated
+            "engine_version": " + ".join([first.engine_version, *(f"{c.engine.value} {c.engine_version}" for _, c in caps[1:])]),
             "max_parallel": max(c.max_parallel or 1 for _, c in caps),
             "extra": {"engines": {n: c.model_dump(mode="json") for n, c in caps},
                       "supported_version": all(c.extra.get("supported_version", True) for _, c in caps)},

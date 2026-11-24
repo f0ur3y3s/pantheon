@@ -52,7 +52,7 @@ async def test_configs_from_both_engines_with_clashing_ids_prefixed(pythia):
     assert configs == {"iq3_xxs-32k": EngineKind.STRATA, "shared": EngineKind.STRATA,
                        "inkling-q4": EngineKind.POLYSTRATA, "polystrata/shared": EngineKind.POLYSTRATA}
     caps = await agent.adapter.capabilities()
-    assert caps.engine_version.startswith("strata 0.1.54 + polystrata")
+    assert caps.engine_version.startswith("0.1.54 + polystrata ")
 
 
 async def test_switch_between_engines(pythia):
