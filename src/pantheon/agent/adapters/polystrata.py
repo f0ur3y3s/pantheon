@@ -19,8 +19,7 @@ class PolyStrataAdapter(StrataAdapter):
 
     def __init__(self, settings: StrataSettings):
         super().__init__(settings)
-        # The checkout's own presets, plus any configured ones (e.g. an installed Strata's launch/ presets).
-        settings.preset_files = [*(str(p) for p in sorted(self.control.glob("strata-*.json"))), *settings.preset_files]
+        self._configured_files = list(settings.preset_files)  # the checkout's own are found on every listing
         # Presets naming "component:strata-engine" need an engine package; PolyStrata looks in its own folder
         # (~/.local/share/polystrata/components), so default to an installed Strata's packages when present.
         strata_components = Path("~/.local/share/strata/components").expanduser()
@@ -45,6 +44,8 @@ class PolyStrataAdapter(StrataAdapter):
                                        "extra": {**caps.extra, "supported_version": True}})
 
     async def list_configs(self) -> list[ModelConfig]:
+        # Re-scan the checkout each time, so presets added while the agent runs appear without a restart.
+        self.s.preset_files = [*(str(p) for p in sorted(self.control.glob("strata-*.json"))), *self._configured_files]
         configs = await super().list_configs()
         for c in configs:
             preset = Path(c.details.get("preset_path", ""))

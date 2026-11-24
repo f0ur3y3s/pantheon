@@ -79,3 +79,10 @@ async def test_switch_between_engines(pythia):
     assert op.status == OperationStatus.SUCCEEDED, op.error
     st = await agent.status()
     assert (st.state, st.engine) == (MachineState.IDLE, EngineKind.STRATA)
+
+
+async def test_polystrata_presets_added_later_are_listed(pythia, tmp_path):
+    agent, _, poly = pythia
+    preset(poly.control / "strata-inkling-128k.json", "inkling-2-mini-q4", 131072)
+    configs = {c.id: c.context for c in await agent.configs()}
+    assert configs["inkling-128k"] == 131072
