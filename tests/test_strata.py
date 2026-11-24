@@ -216,13 +216,18 @@ async def test_polystrata_checkout_presets_and_start(tmp_path, monkeypatch):
         "exe": "engine-poly/strata-poly", "model_name": "inkling-2-mini-q4",
         "args": ["--model", "/m.gguf", "--max-context", "32768"]}))
     (checkout / "other.json").write_text("{}")  # not a strata-*.json preset
+    launch = tmp_path / "launch"
+    launch.mkdir()
+    (launch / "iq3_xxs-32k.json").write_text(json.dumps({
+        "exe": "component:strata-engine", "model_name": "qwen3.8-flash-next-iq3_xxs", "args": ["--max-context", "32768"]}))
     port = free_port()
-    a = PolyStrataAdapter(StrataSettings(control_dir=str(checkout), engine_url=f"http://127.0.0.1:{port}/v1",
+    a = PolyStrataAdapter(StrataSettings(control_dir=str(checkout), preset_dirs=[str(launch)], engine_url=f"http://127.0.0.1:{port}/v1",
                                          state_dir=str(tmp_path / "state"), server_command=[sys.executable, FAKE],
                                          bind_host="127.0.0.1", port=port, expected_load_seconds=1, exit_grace=1.0))
     configs = await a.list_configs()
     assert [(c.id, c.model, c.context, c.engine) for c in configs] == [
-        ("inkling-q4", "inkling-2-mini-q4", 32768, EngineKind.POLYSTRATA)]
+        ("inkling-q4", "inkling-2-mini-q4", 32768, EngineKind.POLYSTRATA),
+        ("iq3_xxs-32k", "qwen3.8-flash-next-iq3_xxs", 32768, EngineKind.POLYSTRATA)]
     caps = await a.capabilities()
     assert caps.engine == EngineKind.POLYSTRATA and caps.extra["supported_version"]
     agent = MachineAgent("pythia", a, EngineKind.POLYSTRATA)

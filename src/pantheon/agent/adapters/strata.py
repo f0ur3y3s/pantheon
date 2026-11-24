@@ -62,6 +62,7 @@ class StrataSettings:
     engine: str = "strata"  # "mock" for testing without a GPU
     mock_configs: list[dict] = field(default_factory=list)  # engine=mock: [{id, label, model, context}]
     extra_args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)  # extra environment for the server process
     bind_host: str = "0.0.0.0"
     port: int = 8080
     parallel: int = 1
@@ -282,7 +283,7 @@ class StrataAdapter:
             kwargs["startupinfo"] = si
         else:
             kwargs["start_new_session"] = True  # survives agent restarts; re-attached via the pid file
-        env = dict(os.environ, PYTHONUNBUFFERED="1")
+        env = dict(os.environ, PYTHONUNBUFFERED="1", **{k: os.path.expanduser(v) for k, v in self.s.env.items()})
         try:
             popen = subprocess.Popen(cmd, env=env, **kwargs)
         except OSError as exc:

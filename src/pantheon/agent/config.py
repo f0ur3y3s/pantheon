@@ -86,20 +86,41 @@ def build_from_config(cfg: AgentConfig) -> FastAPI:
         agent = MachineAgent(cfg.name, LMStudioAdapter(settings), EngineKind.LMSTUDIO, params, profiles)
         return build_agent_app(agent, cfg.token)
     if kind in ("strata", "polystrata"):
-        from pantheon.agent.adapters.polystrata import PolyStrataAdapter
-        from pantheon.agent.adapters.strata import StrataAdapter, StrataSettings
+        adapter, engine = _strata_like(cfg.adapter, state)
+        return build_agent_app(MachineAgent(cfg.name, adapter, engine, params, profiles), cfg.token)
+    if kind == "multi":
+        from pantheon.agent.adapters.multi import MultiAdapter
 
-        known = set(StrataSettings.__dataclass_fields__)
-        unknown = set(cfg.adapter) - known - {"kind"}
+        engines = []
+        for sub in cfg.adapter.get("engines", []):
+            sub = dict(sub)
+            name = sub.pop("name", sub.get("kind"))
+            adapter, engine = _strata_like(sub, state)
+            engines.append((name, engine, adapter))
+        if len({n for n, _, _ in engines}) != len(engines):
+            raise ValueError("multi adapter: give each [[adapter.engines]] a unique name")
+        unknown = set(cfg.adapter) - {"kind", "engines"}
         if unknown:
-            raise ValueError(f"unknown {kind} adapter settings: {sorted(unknown)}")
-        a = {k: v for k, v in cfg.adapter.items() if k != "kind"}
-        a.setdefault("state_dir", str((state or Path("~/.local/state/pantheon").expanduser()) / "strata"))
-        if kind == "polystrata":
-            a.setdefault("port", 8081)
-            adapter, engine = PolyStrataAdapter(StrataSettings(**a)), EngineKind.POLYSTRATA
-        else:
-            adapter, engine = StrataAdapter(StrataSettings(**a)), EngineKind.STRATA
-        agent = MachineAgent(cfg.name, adapter, engine, params, profiles)
-        return build_agent_app(agent, cfg.token)
+            raise ValueError(f"unknown multi adapter settings: {sorted(unknown)}")
+        return build_agent_app(MachineAgent(cfg.name, MultiAdapter(engines), engines[0][1], params, profiles), cfg.token)
     raise ValueError(f"unknown adapter kind {kind!r}")
+
+
+def _strata_like(table: dict, state: Path | None):
+    """A Strata or PolyStrata adapter from [adapter] (or one [[adapter.engines]] entry). Each kind keeps its own
+    state dir (pid and ready files), so both can be configured on one machine."""
+    from pantheon.agent.adapters.polystrata import PolyStrataAdapter
+    from pantheon.agent.adapters.strata import StrataAdapter, StrataSettings
+
+    kind = table.get("kind")
+    if kind not in ("strata", "polystrata"):
+        raise ValueError(f"engine kind must be strata or polystrata, not {kind!r}")
+    unknown = set(table) - set(StrataSettings.__dataclass_fields__) - {"kind"}
+    if unknown:
+        raise ValueError(f"unknown {kind} adapter settings: {sorted(unknown)}")
+    a = {k: v for k, v in table.items() if k != "kind"}
+    a.setdefault("state_dir", str((state or Path("~/.local/state/pantheon").expanduser()) / kind))
+    if kind == "polystrata":
+        a.setdefault("port", 8081)
+        return PolyStrataAdapter(StrataSettings(**a)), EngineKind.POLYSTRATA
+    return StrataAdapter(StrataSettings(**a)), EngineKind.STRATA

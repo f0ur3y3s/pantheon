@@ -11,7 +11,25 @@ scenario = "pythia"
 # PolyStrata (Strata fork, run from a source checkout):
 # [adapter]
 # kind = "polystrata"
-# control_dir = "~/repos/PolyStrata/terminal"   # presets default to its strata-*.json
+# control_dir = "~/repos/PolyStrata/terminal"   # its strata-*.json presets are always listed
+# preset_dirs = ["~/.local/state/strata/launch"]  # Strata presets too; component engines come from
+#                                                 # ~/.local/share/strata/components (override: env.STRATA_COMPONENTS_DIR)
 # engine_url = "http://192.0.2.11:8081/v1"
 # bind_host = "0.0.0.0"
+# port = 8081
+
+# Strata and PolyStrata on one machine, each with its own models; one serves at a time and a switch
+# between them stops one engine and starts the other:
+# [adapter]
+# kind = "multi"
+# [[adapter.engines]]
+# kind = "strata"
+# control_dir = "~/.local/share/strata/terminal/current"
+# preset_dirs = ["~/.local/state/strata/launch"]
+# engine_url = "http://192.0.2.11:8080/v1"
+# port = 8080
+# [[adapter.engines]]
+# kind = "polystrata"
+# control_dir = "~/repos/PolyStrata/terminal"
+# engine_url = "http://192.0.2.11:8081/v1"
 # port = 8081

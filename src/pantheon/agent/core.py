@@ -110,7 +110,7 @@ class MachineAgent:
         return MachineStatus(
             machine=self.name,
             state=self._state,
-            engine=self.engine,
+            engine=getattr(self.adapter, "active_engine", None) or self.engine,  # multi-engine: the serving one
             active_config=self._probe.config_id if self._probe.serving else None,
             served_models=self._probe.served_models if self._probe.serving else [],
             engine_url=self._probe.engine_url if ready else None,

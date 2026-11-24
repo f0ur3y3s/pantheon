@@ -2,7 +2,7 @@
 
 Its serve/server.py has the same CLI, /health, ready file and drain behaviour as Strata, so this reuses
 StrataAdapter. Differences: the server is run as a script from the checkout's .venv, launch presets are the
-`strata-*.json` files beside it (written by polystrata.py), and the version is the checkout's git commit.
+`strata-*.json` files beside it (written by polystrata.py) plus any preset_dirs, and the version is the checkout's git commit.
 """
 
 from __future__ import annotations
@@ -19,8 +19,13 @@ class PolyStrataAdapter(StrataAdapter):
 
     def __init__(self, settings: StrataSettings):
         super().__init__(settings)
-        if not settings.preset_dirs and not settings.preset_files:
-            settings.preset_files = [str(p) for p in sorted(self.control.glob("strata-*.json"))]
+        # The checkout's own presets, plus any configured ones (e.g. an installed Strata's launch/ presets).
+        settings.preset_files = [*(str(p) for p in sorted(self.control.glob("strata-*.json"))), *settings.preset_files]
+        # Presets naming "component:strata-engine" need an engine package; PolyStrata looks in its own folder
+        # (~/.local/share/polystrata/components), so default to an installed Strata's packages when present.
+        strata_components = Path("~/.local/share/strata/components").expanduser()
+        if "STRATA_COMPONENTS_DIR" not in settings.env and strata_components.is_dir():
+            settings.env = {**settings.env, "STRATA_COMPONENTS_DIR": str(strata_components)}
         if settings.server_command is None:
             settings.server_command = [self._python(), str(self.control / "serve" / "server.py")]
 
