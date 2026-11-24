@@ -353,6 +353,15 @@ class StrataAdapter:
             children = proc.children(recursive=True)
         except psutil.Error:
             children = []
+        if self._ignores_sigint(proc):
+            # e.g. started by hand with `&` from a non-interactive shell: SIGINT can't make it drain, so waiting
+            # for one would only burn the whole drain timeout.
+            self._note(f"pid {proc.pid} ignores SIGINT and cannot drain; terminating")
+            await report(0.3, "server ignores the drain signal; terminating")
+            await self._terminate_tree(children)
+            await report(1.0, "stopped")
+            self._clear()
+            return
         await report(0.05, f"draining (pid {proc.pid})")
         self._note(f"stop: signalling strata server pid {proc.pid} to drain")
         await asyncio.to_thread(self._send_stop_signal, proc)  # may run a helper process; keep the loop free
@@ -377,6 +386,17 @@ class StrataAdapter:
         await self._terminate_tree(children)
         await report(1.0, "stopped")
         self._clear()
+
+    @staticmethod
+    def _ignores_sigint(proc: psutil.Process) -> bool:
+        """Linux only: whether SIGINT is in the process's ignored-signal mask (/proc/<pid>/status SigIgn)."""
+        try:
+            for line in Path(f"/proc/{proc.pid}/status").read_text().splitlines():
+                if line.startswith("SigIgn:"):
+                    return bool(int(line.split()[1], 16) & (1 << (signal.SIGINT - 1)))
+        except (OSError, ValueError, IndexError):
+            pass
+        return False
 
     def _send_stop_signal(self, proc: psutil.Process) -> None:
         try:

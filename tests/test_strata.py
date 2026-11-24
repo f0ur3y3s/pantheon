@@ -236,3 +236,28 @@ async def test_polystrata_checkout_presets_and_start(tmp_path, monkeypatch):
     assert (await agent.status()).served_models == ["inkling-2-mini-q4"]
     op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=30)
     assert op.status == OperationStatus.SUCCEEDED, op.error
+
+
+def test_ignores_sigint_reads_the_proc_signal_mask(tmp_path, monkeypatch):
+    import pantheon.agent.adapters.strata as mod
+
+    status = tmp_path / "status"
+    monkeypatch.setattr(mod, "Path", lambda _p: status)
+    status.write_text("Name: python\nSigIgn:\t0000000001001007\n")  # bit 2 (SIGINT) set: started with `&`
+    assert StrataAdapter._ignores_sigint(psutil.Process())
+    status.write_text("Name: python\nSigIgn:\t0000000001001005\n")
+    assert not StrataAdapter._ignores_sigint(psutil.Process())
+
+
+async def test_stop_terminates_at_once_when_sigint_is_ignored(strata_env, monkeypatch):
+    agent, a = make(strata_env)  # drain_timeout is 20s
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.START, config_id="iq3_xxs-32k"))).id, timeout=20)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
+    monkeypatch.setattr(StrataAdapter, "_ignores_sigint", staticmethod(lambda proc: True))
+    sent = []
+    monkeypatch.setattr(a, "_send_stop_signal", lambda proc: sent.append(proc.pid))
+    started = time.monotonic()
+    op = await wait_op(agent, (await agent.submit(OperationRequest(kind=OperationKind.STOP))).id, timeout=20)
+    assert op.status == OperationStatus.SUCCEEDED, op.error
+    assert time.monotonic() - started < 15 and not sent
+    assert (await agent.status()).state == MachineState.IDLE
