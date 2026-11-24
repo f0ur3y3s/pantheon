@@ -30,7 +30,8 @@ class GatewayConfig:
     admin_token: str = ""  # dashboard / control API; empty = no sign-in required
     client_keys: list[str] = field(default_factory=list)  # OpenAI API; empty = open on the LAN
     poll_seconds: float = 2.0
-    upstream_read_timeout: float = 600.0
+    upstream_read_timeout: float = 1800.0  # an engine writing a long tool call can be silent for minutes
+    stream_heartbeat: float = 10.0  # seconds of upstream silence before a keep-alive chunk is sent
     dashboard_dir: str | None = None
     public_url: str | None = None  # how clients reach the gateway, e.g. http://192.0.2.20:9000
     machines: list[MachineEntry] = field(default_factory=list)
@@ -50,7 +51,8 @@ def load_gateway_config(path: str | Path) -> GatewayConfig:
         admin_token=g.get("admin_token") or admin_token_from_env(g.get("admin_token_env", ADMIN_TOKEN_ENV)),
         client_keys=keys,
         poll_seconds=float(g.get("poll_seconds", 2.0)),
-        upstream_read_timeout=float(g.get("upstream_read_timeout", 600.0)),
+        upstream_read_timeout=float(g.get("upstream_read_timeout", 1800.0)),
+        stream_heartbeat=float(g.get("stream_heartbeat", 10.0)),
         dashboard_dir=g.get("dashboard_dir"),
         public_url=(g.get("public_url") or "").rstrip("/") or None,
         machines=[MachineEntry(name=m["name"], url=m["url"].rstrip("/"), token=resolve_secret(m, "token"))

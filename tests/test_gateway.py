@@ -28,8 +28,9 @@ def free_port() -> int:
 class Stack:
     """Real sockets: sim agents + gateway under uvicorn, so streaming and disconnects behave for real."""
 
-    def __init__(self, scenarios: dict[str, dict]):
+    def __init__(self, scenarios: dict[str, dict], **gateway):
         self.scenarios = scenarios
+        self.gateway = gateway  # GatewayConfig overrides
         self.servers: list[uvicorn.Server] = []
         self.adapters: dict[str, SimulatedAdapter] = {}
         self.gateway_url = ""
@@ -47,7 +48,7 @@ class Stack:
         await self._wait_started()  # agents first: a refused connect costs ~2s on Windows
         machines.append(MachineEntry(name="ghost", url=f"http://127.0.0.1:{free_port()}", token="x"))
         gport = free_port()
-        cfg = GatewayConfig(port=gport, admin_token="admin", poll_seconds=0.1, machines=machines)
+        cfg = GatewayConfig(port=gport, admin_token="admin", poll_seconds=0.1, machines=machines, **self.gateway)
         self._serve(build_gateway_app(cfg), gport)
         self.gateway_url = f"http://127.0.0.1:{gport}"
         await self._wait_started()
@@ -126,6 +127,27 @@ async def test_failed_start_surfaces_engine_error():
         await asyncio.sleep(0.3)
         m = (await c.get("/api/machines/zeus", headers=ADMIN)).json()
         assert m["status"]["state"] == "failed"
+
+
+async def test_quiet_upstream_gets_heartbeats_that_parse_as_no_op_chunks():
+    # 2 tokens/s with a 0.2 s heartbeat: several heartbeats land between tokens, like a long tool call
+    async with Stack({"mbp": {"tokens_per_second": 2}}, stream_heartbeat=0.2) as st,             httpx.AsyncClient(base_url=st.gateway_url, timeout=10) as c:
+        body = {"model": "qwen36", "stream": True, "max_tokens": 3, "messages": []}
+        data, comments = [], 0
+        async with c.stream("POST", "/v1/chat/completions", json=body) as r:
+            async for line in r.aiter_lines():
+                if line.startswith("data: "):
+                    data.append(line[6:])
+                elif line.startswith(":"):
+                    comments += 1
+        assert data[-1] == "[DONE]"
+        chunks = [json.loads(d) for d in data[:-1]]
+        real = [ch for ch in chunks if ch["choices"][0]["delta"]]
+        beats = [ch for ch in chunks if not ch["choices"][0]["delta"]]
+        assert len(real) == 3 and "".join(ch["choices"][0]["delta"]["content"] for ch in real).startswith("tok0")
+        assert beats, "expected heartbeat chunks between slow tokens"
+        assert all(b["id"] == real[0]["id"] and b["model"] == real[0]["model"] for b in beats)
+        assert comments >= 1  # before the first chunk there is no id to copy, so a comment is sent
 
 
 async def test_streaming_passthrough_and_client_disconnect_releases_engine():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import hmac
@@ -24,6 +25,27 @@ log = logging.getLogger("pantheon.gateway")
 # Hop-by-hop / recomputed headers that must not be copied between client and engine.
 _DROP_HEADERS = {"host", "content-length", "connection", "keep-alive", "transfer-encoding",
                  "authorization", "accept-encoding", "content-encoding"}
+
+
+def _last_chunk_meta(events: bytes) -> dict:
+    """id/object/created/model of the last complete `data: {json}` event, to shape heartbeats like the stream."""
+    for event in reversed(events.split(b"\n\n")):
+        for line in event.split(b"\n"):
+            if line.startswith(b"data:") and line[5:].strip() not in (b"", b"[DONE]"):
+                try:
+                    d = json.loads(line[5:])
+                except ValueError:
+                    continue
+                return {k: d[k] for k in ("id", "object", "created", "model") if k in d}
+    return {}
+
+
+def _heartbeat(meta: dict) -> bytes:
+    """A chunk with an empty delta (a valid no-op for OpenAI stream parsers); a comment before the first chunk."""
+    if not meta:
+        return b": keep-alive\n\n"
+    chunk = {**meta, "choices": [{"index": 0, "delta": {}, "finish_reason": None}]}
+    return b"data: " + json.dumps(chunk).encode() + b"\n\n"
 
 
 def _err(status: int, code: ErrorCode, message: str, **detail) -> JSONResponse:
@@ -238,13 +260,42 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
         out_headers["x-pantheon-machine"] = machine
 
         async def relay():
+            # Engines can go quiet mid-stream for minutes: Strata/PolyStrata send a tool call only once all of its
+            # arguments are written, so a large file write is a long silence, and clients (omp, pi) abort a stream
+            # that stalls. While upstream is quiet, send an empty-delta chunk every HEARTBEAT seconds, only at an
+            # event boundary and reusing the stream's own id/model, so every OpenAI client parses it as a no-op.
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def pump():
+                try:
+                    async for chunk in resp.aiter_raw():
+                        await queue.put(chunk)
+                except httpx.HTTPError as exc:
+                    # Mid-stream engine failure: the client already has partial output; we can only end the stream.
+                    log.warning("%s: upstream stream broke: %s", machine, exc)
+                finally:
+                    await queue.put(None)
+
+            reader = asyncio.create_task(pump())
+            tail = b""  # unterminated bytes of the current event
+            last: dict = {}  # id/model/created of the last chunk, for heartbeats
             try:
-                async for chunk in resp.aiter_raw():
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(queue.get(), timeout=cfg.stream_heartbeat)
+                    except asyncio.TimeoutError:
+                        if not tail:
+                            yield _heartbeat(last)
+                        continue
+                    if chunk is None:
+                        break
+                    tail += chunk
+                    events, _, tail = tail.rpartition(b"\n\n")
+                    if events:
+                        last = _last_chunk_meta(events) or last
                     yield chunk
-            except httpx.HTTPError as exc:
-                # Mid-stream engine failure: the client already has partial output; we can only end the stream.
-                log.warning("%s: upstream stream broke: %s", machine, exc)
             finally:
+                reader.cancel()
                 # Runs on normal completion *and* on client disconnect (generator closed),
                 # which closes the engine connection so the engine can stop generating.
                 await resp.aclose()
