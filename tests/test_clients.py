@@ -67,9 +67,11 @@ async def test_endpoints_follow_live_status():
         r = await c.get("/api/machines/mbp/client-config", headers=ADMIN)
         assert r.status_code == 200
         body = r.json()
-        assert body["direct"] is True and body["models"] == ["qwen36"]
-        assert body["base_url"].endswith("/sim/v1")
-        assert body["opencode"]["config"]["provider"]["mbp"]["models"]["qwen36"]["limit"]["context"] == 131072
+        # through the gateway, never direct to the engine, so streams get heartbeats and requests are tracked
+        assert body["direct"] is False and body["models"] == ["mbp/qwen36"]
+        assert body["base_url"] == f"{st.gateway_url}/v1"
+        assert body["opencode"]["config"]["provider"]["pantheon"]["models"]["mbp/qwen36"]["limit"]["context"] == 131072
+        assert body["omp"]["config"]["providers"]["pantheon"]["baseUrl"] == f"{st.gateway_url}/v1"
 
         r = await c.get("/api/machines/zeus/client-config", headers=ADMIN)  # idle
         assert r.status_code == 409 and r.json()["error"]["code"] == "not_ready"

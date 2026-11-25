@@ -159,8 +159,9 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
         return await client.call("GET", "/v1/logs", params={"lines": lines})
 
     @api.get("/machines/{name}/client-config")
-    async def machine_client_config(name: str):
-        """Provider snippets that talk to this machine's engine directly (bypasses gateway draining)."""
+    async def machine_client_config(name: str, request: Request):
+        """Provider snippets for this machine's models, through the gateway. Never direct to the engine: that
+        would skip stream heartbeats, request tracking and draining, and break when the engine's port moves."""
         client, view = registry.get(name)
         st = view.status
         if st.state.value != "ready" or not st.engine_url:
@@ -168,10 +169,13 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
                                                 message=f"{name} is {st.state.value}; client configs need a serving model"))
         configs = {c["id"]: c for c in await client.call("GET", "/v1/configs")}
         active = configs.get(st.active_config or "", {})
-        models = [ClientModel(id=m, name=f"{active.get('label') or m} ({name})", context=active.get("context"))
+        models = [ClientModel(id=f"{name}/{m}", name=f"{m} ({name})", context=active.get("context"))
                   for m in st.served_models]
-        out = client_configs(f"{name}", f"{name} (direct)", st.engine_url, models, api_key_env=None)
-        out["direct"] = True
+        base = cfg.public_url or str(request.base_url).rstrip("/")
+        # Same provider id as the gateway-wide snippet, so the two merge into one provider block.
+        out = client_configs("pantheon", "Pantheon gateway", f"{base}/v1", models,
+                             api_key_env="PANTHEON_API_KEY" if cfg.client_keys else None)
+        out["direct"] = False
         return out
 
     @api.get("/client-config")

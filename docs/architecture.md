@@ -80,7 +80,7 @@ Operation rules:
 
 ## Client configs
 
-`GET /api/client-config` (gateway) and `GET /api/machines/{m}/client-config` (direct to the engine) return opencode and pi provider snippets generated from live status. See `gateway/clients.py` for the format notes.
+`GET /api/client-config` (every machine) and `GET /api/machines/{m}/client-config` (one machine's models; also through the gateway, never direct to the engine, so streams get heartbeats and requests are tracked) return opencode and pi provider snippets generated from live status. See `gateway/clients.py` for the format notes.
 
 ## Status and remaining work
 

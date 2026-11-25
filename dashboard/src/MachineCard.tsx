@@ -284,12 +284,12 @@ export function MachineCard({ m, onChanged }: { m: MachineView; onChanged: () =>
         />
       )}
 
-      {showConnect && !serving && <p className="note">Start a model to get a direct connection configuration.</p>}
+      {showConnect && !serving && <p className="note">Start a model to get a connection configuration.</p>}
       {showConnect && serving && (
         <ConnectPanel
           key={servingKey}
           load={loadClientConfig}
-          note="Connects directly to this machine's engine. Requests bypass gateway draining during a switch."
+          note="Connects through the gateway to this machine's models only. Use Connect a client for every machine."
         />
       )}
 
