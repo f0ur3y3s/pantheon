@@ -55,6 +55,15 @@ def test_omp_is_the_pi_shape_as_yaml():
 """
 
 
+def test_palimnesis_runs_against_the_engine_origin_with_a_budget_that_leaves_answer_room():
+    from pantheon.gateway.clients import palimnesis_snippet
+
+    p = palimnesis_snippet("http://192.0.2.11:8081/v1", "inkling-2-mini", 131072)
+    assert p["config"] == {"upstream": "http://192.0.2.11:8081", "model": "inkling-2-mini", "input_budget": 131072 - 32768}
+    assert "serve --upstream http://192.0.2.11:8081 --input-budget 98304" in p["text"]
+    assert "setup omp --model inkling-2-mini" in p["text"] and "check --upstream http://192.0.2.11:8081" in p["text"]
+
+
 def test_keyed_endpoint_uses_env_references_never_literal_keys():
     out = client_configs("pantheon", "Pantheon", "http://gw/v1", [ClientModel(id="m", name="m", context=4096)], "PANTHEON_API_KEY")
     assert out["opencode"]["config"]["provider"]["pantheon"]["options"]["apiKey"] == "{env:PANTHEON_API_KEY}"
@@ -72,6 +81,7 @@ async def test_endpoints_follow_live_status():
         assert body["base_url"] == f"{st.gateway_url}/v1"
         assert body["opencode"]["config"]["provider"]["pantheon"]["models"]["mbp/qwen36"]["limit"]["context"] == 131072
         assert body["omp"]["config"]["providers"]["pantheon"]["baseUrl"] == f"{st.gateway_url}/v1"
+        assert "palimnesis" not in body  # simulated engine: Palimnesis needs a Strata origin
 
         r = await c.get("/api/machines/zeus/client-config", headers=ADMIN)  # idle
         assert r.status_code == 409 and r.json()["error"]["code"] == "not_ready"

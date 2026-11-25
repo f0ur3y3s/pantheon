@@ -109,6 +109,7 @@ export interface ClientConfigs {
   opencode: ClientSnippet;
   pi: ClientSnippet;
   omp: ClientSnippet;
+  palimnesis?: ClientSnippet; // machine tab only, Strata engines: a proxy run direct to the engine
 }
 
 export type ParamType = "int" | "float" | "bool" | "enum";

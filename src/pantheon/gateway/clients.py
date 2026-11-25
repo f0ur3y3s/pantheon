@@ -115,6 +115,34 @@ def _yaml_scalar(v) -> str:
     return json.dumps(str(v))
 
 
+def palimnesis_snippet(engine_url: str, model: str, context: int | None) -> dict:
+    """Commands to run a Palimnesis proxy against one Strata engine (https://github.com/f0ur3y3s/palimnesis).
+
+    Palimnesis needs the Strata server's own origin (it uses Strata's token-count endpoints), so this is the
+    one snippet that bypasses the gateway. Its input budget is the context minus the client's output limit.
+    """
+    origin = engine_url.removesuffix("/").removesuffix("/v1")
+    budget = f" --input-budget {context - _output_limit(context)}" if context else ""
+    text = "\n".join([
+        "# in your palimnesis checkout; serve listens on 127.0.0.1:9000 (add --port N to serve and setup to change it)",
+        f"uv run python -m palimnesis serve --upstream {origin}{budget}",
+        "",
+        "# in another terminal: configure omp (or: setup pi / setup opencode), then check everything passes",
+        f"uv run palimnesis setup omp --model {model}",
+        f"uv run palimnesis check --upstream {origin}",
+        "",
+    ])
+    return {
+        "path": "palimnesis proxy, direct to the engine",
+        "merge_hint": "Palimnesis talks to the engine itself, so these requests skip the gateway: no stream "
+                      "heartbeats or request tracking, and a switch to another model or engine breaks the proxy "
+                      "until it is restarted with the new address.",
+        "config": {"upstream": origin, "model": model, "input_budget": context - _output_limit(context) if context else None},
+        "text": text,
+        "usage": "omp",
+    }
+
+
 def client_configs(provider_id: str, label: str, base_url: str, models: list[ClientModel],
                    api_key_env: str | None) -> dict:
     """Everything the dashboard's Connect section shows for one endpoint."""

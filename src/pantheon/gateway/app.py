@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from pantheon.contracts import CreateProfile, ErrorBody, ErrorCode, OperationRequest, ParamUpdate
-from pantheon.gateway.clients import ClientModel, client_configs
+from pantheon.gateway.clients import ClientModel, client_configs, palimnesis_snippet
 from pantheon.gateway.summary import build_summary
 from pantheon.gateway.config import GatewayConfig
 from pantheon.gateway.machines import AgentCallError, MachineRegistry
@@ -176,6 +176,9 @@ def build_gateway_app(cfg: GatewayConfig, registry: MachineRegistry | None = Non
         out = client_configs("pantheon", "Pantheon gateway", f"{base}/v1", models,
                              api_key_env="PANTHEON_API_KEY" if cfg.client_keys else None)
         out["direct"] = False
+        # Palimnesis proxies need a Strata engine's own origin: offered only on Strata/PolyStrata machines.
+        if st.engine.value in ("strata", "polystrata") and st.served_models:
+            out["palimnesis"] = palimnesis_snippet(st.engine_url, st.served_models[0], active.get("context"))
         return out
 
     @api.get("/client-config")
