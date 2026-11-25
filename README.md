@@ -4,6 +4,7 @@ A central dashboard and a single OpenAI-compatible endpoint for the homelab LLM 
 
 - `docs/inventory.md`: what is installed on each machine (host-specific details are kept in the gitignored `local/`)
 - `docs/deploy.md`: how the gateway and agents are deployed
+- `docs/clients.md`: connecting coding agents (omp, pi, opencode) through the gateway for stable sessions
 - `docs/architecture.md`: components, decisions, and the machine-service API
 
 ## Develop
